@@ -9,6 +9,9 @@ node_modules/
 # Production
 /build
 /dist
+# Next.js build output
+.next/
+web/.next/*
 
 # Misc
 .DS_Store
