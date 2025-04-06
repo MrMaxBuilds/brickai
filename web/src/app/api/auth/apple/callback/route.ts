@@ -68,7 +68,7 @@ function generateClientSecret(): string {
         iat: now,
         exp: now + 60 * 60, // Expires in 1 hour, max allowed by Apple is 6 months
         aud: 'https://appleid.apple.com',
-        sub: process.env.APPLE_SERVICE_ID as string, // Your Services ID
+        sub: process.env.APPLE_BUNDLE_ID as string, // Your Services ID
     };
 
     const token = jwt.sign(claims, applePrivateKey, {
@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
 
     const appleRefreshToken = tokenData.refresh_token; // Store this securely!
     const appleIdToken = tokenData.id_token; // Verify this
+    console.log("Apple ID Token:", appleIdToken);
 
     // --- 4. Verify the Apple ID Token ---
     console.log("Verifying Apple ID Token...");
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
           {
             algorithms: ['RS256'],
             issuer: 'https://appleid.apple.com',
-            audience: process.env.APPLE_SERVICE_ID as string, // Use Service ID here
+            audience: process.env.APPLE_BUNDLE_ID as string, // Use Service ID here
             // Nonce checking would happen here if you passed one in the initial auth request
           },
           (err, decodedPayload) => {
