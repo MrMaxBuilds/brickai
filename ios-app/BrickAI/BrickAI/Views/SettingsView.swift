@@ -9,14 +9,19 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject var userManager: UserManager
-    
-    var body: some View {
-        VStack {
-            Text("Settings for \(userManager.userName ?? "User")")
-                .font(.title)
-            Spacer()
-        }
-        .navigationTitle("Settings")
-    }
+     @EnvironmentObject var userManager: UserManager
+     var body: some View {
+          Form { // Example using Form for settings layout
+              Section("Account") {
+                   Text("Username: \(userManager.userName ?? "N/A")")
+                   Text("User ID: \(userManager.userIdentifier ?? "N/A")")
+                   Button("Log Out", role: .destructive) {
+                        userManager.clearUser()
+                        // Dismiss settings view? Might need environment dismiss action
+                   }
+              }
+              // Add other settings sections...
+          }
+          .navigationTitle("Settings")
+     }
 }
