@@ -137,9 +137,12 @@ export async function POST(req: NextRequest) {
         storedAppleRefreshToken = userData.apple_refresh_token; // Assign here
         console.log(`Refresh Route: Retrieved Apple refresh token for user: ${appleUserId}`);
 
-    } catch (dbError: any) {
-        console.error('Refresh Route: Database Error fetching refresh token:', dbError);
-        return NextResponse.json({ error: `Database operation failed: ${dbError.message || 'Unknown database error'}` }, { status: 500 });
+    } catch (dbError: unknown) {
+        console.error('Refresh Route: Database Error fetching refresh token:', 
+          dbError instanceof Error ? dbError.message : 'Unknown error');
+        return NextResponse.json({ 
+          error: `Database operation failed: ${dbError instanceof Error ? dbError.message : 'Unknown database error'}` 
+        }, { status: 500 });
     }
 
     // --- 4. Generate NEW Client Secret (code unchanged) ---
@@ -167,7 +170,10 @@ export async function POST(req: NextRequest) {
             if (tokenData.error === 'invalid_grant') {
                  console.warn(`Refresh Route: Apple refresh token invalid_grant for user ${appleUserId}. Token might be revoked.`);
                  try { await supabase.from('users').update({ apple_refresh_token: null }).eq('apple_user_id', appleUserId); }
-                 catch(clearError: any) { console.error(`Refresh Route: Failed to clear invalid refresh token for user ${appleUserId}:`, clearError.message); }
+                 catch(clearError: unknown) {
+                   console.error(`Refresh Route: Failed to clear invalid refresh token for user ${appleUserId}:`, 
+                     clearError instanceof Error ? clearError.message : 'Unknown error'); 
+                 }
                  return NextResponse.json({ error: 'Unauthorized: Apple refresh token invalid or revoked.' }, { status: 401 });
             }
             return NextResponse.json({ error: `Apple token refresh failed: ${tokenData.error || 'Unknown error'}` }, { status: tokenResponse.status });
@@ -176,9 +182,12 @@ export async function POST(req: NextRequest) {
         newAppleIdToken = tokenData.id_token; newAppleRefreshToken = tokenData.refresh_token;
         if (!newAppleIdToken) { throw new Error("Apple did not return a new id_token during refresh."); }
 
-    } catch (exchangeError: any) {
-         console.error('Refresh Route: Error during fetch to Apple /auth/token:', exchangeError);
-         return NextResponse.json({ error: `Failed to communicate with Apple for token refresh: ${exchangeError.message}` }, { status: 502 });
+    } catch (exchangeError: unknown) {
+         console.error('Refresh Route: Error during fetch to Apple /auth/token:', 
+           exchangeError instanceof Error ? exchangeError.message : 'Unknown error');
+         return NextResponse.json({ 
+           error: `Failed to communicate with Apple for token refresh: ${exchangeError instanceof Error ? exchangeError.message : 'Unknown error'}` 
+         }, { status: 502 });
     }
 
     // --- 6. Verify the NEW Apple ID Token ---
@@ -224,14 +233,18 @@ export async function POST(req: NextRequest) {
             const { error: updateError } = await supabase.from('users').update({ apple_refresh_token: newAppleRefreshToken }).eq('apple_user_id', appleUserId);
             if (updateError) { console.error(`Refresh Route: Failed to update new Apple refresh token in DB for user ${appleUserId}:`, updateError.message); }
             else { console.log(`Refresh Route: Successfully updated new Apple refresh token for user ${appleUserId}.`); }
-        } catch (dbUpdateError: any) { console.error(`Refresh Route: Exception during DB update for new refresh token for user ${appleUserId}:`, dbUpdateError.message); }
+        } catch (dbUpdateError: unknown) {
+          console.error(`Refresh Route: Exception during DB update for new refresh token for user ${appleUserId}:`, 
+            dbUpdateError instanceof Error ? dbUpdateError.message : 'Unknown error'); 
+        }
     }
 
     // --- 8. Generate NEW Backend Session Token (code unchanged) ---
     console.log("Refresh Route: Generating new backend session token...");
     const newSessionTokenPayload = {
         iss: 'BrickAIBackend', sub: appleUserId,
-        exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7), // Renew validity
+        // exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7), // 7 Days
+        exp: Math.floor(Date.now() / 1000) + (30), // 30 Seconds
         iat: Math.floor(Date.now() / 1000),
     };
     const newSessionToken = jwt.sign(newSessionTokenPayload, backendJwtSecret, { algorithm: 'HS256' });
