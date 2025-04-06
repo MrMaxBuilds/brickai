@@ -68,16 +68,11 @@ actor TokenRefresher {
         } else {
             // If already refreshing, wait for the result
             print("TokenRefresher: Refresh already in progress, waiting...")
-            // ** FIX START: Modify state from within the actor context **
-            // The withCheckedThrowingContinuation suspends the calling task.
-            // Appending the continuation needs to be done safely within the actor.
-            // Since this whole function runs on the actor, direct access *should* be safe.
             return try await withCheckedThrowingContinuation { continuation in
                  // Accessing actor state directly inside the actor's async function.
                  // The continuation itself is Sendable.
                  self.waitingContinuations.append(continuation)
             }
-             // ** FIX END **
         }
     }
 } // End Actor

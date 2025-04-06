@@ -241,8 +241,7 @@ export async function POST(req: NextRequest) {
     const sessionTokenPayload = {
         iss: 'BrickAIBackend',
         sub: appleUserId,
-        // exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7), // 7 days validity
-        exp: Math.floor(Date.now() / 1000) + (30), // 30 Seconds
+        exp: Math.floor(Date.now() / 1000) + (30 * 60), // 30 Minutes
         iat: Math.floor(Date.now() / 1000),
     };
     const sessionToken = jwt.sign(sessionTokenPayload, backendJwtSecret, { algorithm: 'HS256' });

@@ -243,8 +243,7 @@ export async function POST(req: NextRequest) {
     console.log("Refresh Route: Generating new backend session token...");
     const newSessionTokenPayload = {
         iss: 'BrickAIBackend', sub: appleUserId,
-        // exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7), // 7 Days
-        exp: Math.floor(Date.now() / 1000) + (30), // 30 Seconds
+        exp: Math.floor(Date.now() / 1000) + (30 * 60), // 30 Minutes
         iat: Math.floor(Date.now() / 1000),
     };
     const newSessionToken = jwt.sign(newSessionTokenPayload, backendJwtSecret, { algorithm: 'HS256' });
