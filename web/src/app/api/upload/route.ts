@@ -46,13 +46,15 @@ export async function POST(req: NextRequest) {
         appleUserId = decoded.sub; // Extract the Apple User ID from *our* token's 'sub' claim
         console.log(`Verified session token for Apple User ID (sub): ${appleUserId}`);
 
-    } catch (err: any) {
-        console.error('Backend Session Token Verification Error:', err.message);
+    } catch (err: unknown) {
+        console.error('Backend Session Token Verification Error:', err instanceof Error ? err.message : 'Unknown error');
         let errorMessage = 'Unauthorized: Invalid session token.';
-        if (err.name === 'TokenExpiredError') {
-            errorMessage = 'Unauthorized: Session has expired.';
-        } else if (err.name === 'JsonWebTokenError') {
-             errorMessage = 'Unauthorized: Malformed session token.';
+        if (err instanceof Error) {
+            if (err.name === 'TokenExpiredError') {
+                errorMessage = 'Unauthorized: Session has expired.';
+            } else if (err.name === 'JsonWebTokenError') {
+                errorMessage = 'Unauthorized: Malformed session token.';
+            }
         }
         // You could potentially trigger refresh logic here if applicable,
         // but typically the client handles expired session tokens by re-authenticating or refreshing.
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest) {
       // No longer need to return appleUserId, client already knows or doesn't care here
     });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Unhandled Error in Upload Route:', err);
     return NextResponse.json({ error: 'Internal server error during upload processing.' }, { status: 500 });
   }

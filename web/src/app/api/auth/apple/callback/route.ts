@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import jwt, { JwtHeader, SigningKeyCallback } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { sql } from '@vercel/postgres'; // Vercel Postgres client
-import { v4 as uuidv4 } from 'uuid'; // For potential internal session IDs if not using JWT for session
 
 // --- Environment Variable Check ---
 // Add new required variables for Apple auth and database
@@ -90,7 +89,6 @@ export async function POST(req: NextRequest) {
   let authorizationCode: string;
   let appleUserId: string | null = null;
   let userEmail: string | null = null;
-  let userFullName: string | null = null; // Consider if needed/available
 
   if (!checkEnvVars()) {
     return NextResponse.json(
@@ -120,7 +118,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({
-        client_id: process.env.APPLE_SERVICE_ID as string, // Your Services ID
+        client_id: process.env.APPLE_BUNDLE_ID as string, // Your Services ID
         client_secret: clientSecret,
         code: authorizationCode,
         grant_type: 'authorization_code',
@@ -138,7 +136,6 @@ export async function POST(req: NextRequest) {
 
     const appleRefreshToken = tokenData.refresh_token; // Store this securely!
     const appleIdToken = tokenData.id_token; // Verify this
-    const appleAccessToken = tokenData.access_token; // Less commonly used directly by backend after this point
 
     // --- 4. Verify the Apple ID Token ---
     console.log("Verifying Apple ID Token...");
@@ -175,11 +172,11 @@ export async function POST(req: NextRequest) {
 
       console.log(`Verified Apple User ID (sub): ${appleUserId}, Email: ${userEmail ?? 'N/A'}`);
 
-    } catch (err: any) {
-      console.error('Apple ID Token Verification Failed:', err.message);
+    } catch (err: unknown) {
+      console.error('Apple ID Token Verification Failed:', err instanceof Error ? err.message : 'Unknown error');
       // Handle specific JWT errors if needed (e.g., TokenExpiredError)
       let errorMessage = 'Unauthorized: Invalid Apple ID token.';
-      if (err.name === 'TokenExpiredError') {
+      if (err instanceof Error && err.name === 'TokenExpiredError') {
         errorMessage = 'Unauthorized: Apple ID token has expired.';
       }
       return NextResponse.json({ error: errorMessage }, { status: 401 });
@@ -235,7 +232,7 @@ export async function POST(req: NextRequest) {
         appleUserId = dbUser.apple_user_id;
 
 
-    } catch (dbError: any) {
+    } catch (dbError: unknown) {
         console.error('Database Error:', dbError);
         return NextResponse.json({ error: 'Database operation failed.' }, { status: 500 });
     }
@@ -263,13 +260,8 @@ export async function POST(req: NextRequest) {
         email: userEmail          // Optionally send email back
     });
 
-  } catch (err: any) {
-    console.error('Unhandled Error in Apple Auth Callback:', err);
-    // Log the specific error if possible
-    let errorMessage = 'Internal server error during authentication.';
-    if (err instanceof Error) {
-        errorMessage = err.message;
-    }
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  } catch (err: unknown) {
+    console.error('Authentication Error:', err);
+    return NextResponse.json({ error: 'Authentication process failed.' }, { status: 500 });
   }
 }

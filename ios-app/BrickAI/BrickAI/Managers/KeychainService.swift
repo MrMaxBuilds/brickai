@@ -1,3 +1,6 @@
+// File: BrickAI/Managers/KeychainService.swift
+// Full Untruncated File
+
 import Foundation
 import Security
 
@@ -7,7 +10,8 @@ let kKeychainService = Bundle.main.bundleIdentifier ?? "com.default.keychainserv
 
 // Account keys used to identify specific data items
 let kKeychainAccountUserIdentifier = "appleUserIdentifier"
-let kKeychainAccountIdentityToken = "appleIdentityToken"
+// DEPRECATED - let kKeychainAccountIdentityToken = "appleIdentityToken" // No longer storing Apple identity token directly
+let kKeychainAccountSessionToken = "backendSessionToken" // Key for storing our backend session token
 let kKeychainAccountUserName = "userName" // Can also store username if desired
 
 enum KeychainError: Error, LocalizedError {
@@ -96,11 +100,11 @@ struct KeychainService {
             // This indicates an unexpected item type was stored or retrieved
             throw KeychainError.unexpectedData
         }
-        
+
         print("Keychain: Successfully loaded data for key '\(accountKey)'")
         return data
     }
-    
+
     // Generic function to update existing data in Keychain (Less used with delete-then-add strategy)
     // Kept for completeness or alternative implementations.
     static func updateData(_ data: Data, forKey accountKey: String) throws {
@@ -110,13 +114,13 @@ struct KeychainService {
              kSecAttrAccount as String: accountKey
              // Do not specify kSecMatchLimitOne for update
          ]
-         
+
          // Attributes to update
          let attributes: [String: Any] = [
              kSecValueData as String: data
              // Could potentially update kSecAttrAccessible here too if needed
          ]
-         
+
          let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
          // Check specific errors
          guard status != errSecItemNotFound else {
@@ -154,9 +158,9 @@ struct KeychainService {
               print("Keychain: No data found to delete for key '\(accountKey)'")
          }
     }
-    
+
     // --- Convenience methods for String ---
-    
+
     static func saveString(_ string: String, forKey accountKey: String) throws {
         // Convert String to Data using UTF-8 encoding
         guard let data = string.data(using: .utf8) else {
@@ -167,7 +171,7 @@ struct KeychainService {
         // Call the primary saveData function
         try saveData(data, forKey: accountKey)
     }
-    
+
     static func loadString(forKey accountKey: String) -> String? {
         do {
             // Call the primary loadData function

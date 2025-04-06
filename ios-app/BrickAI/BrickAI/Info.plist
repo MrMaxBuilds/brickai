@@ -3,6 +3,8 @@
 <plist version="1.0">
 <dict>
 	<key>APIEndpointURL</key>
-	<string>https://brickai-git-main-maxunts-projects.vercel.app/api/upload</string>
+	<string>https://brickai.vercel.app</string>
+	<key>CFBundleIdentifier</key>
+	<string></string>
 </dict>
 </plist>
