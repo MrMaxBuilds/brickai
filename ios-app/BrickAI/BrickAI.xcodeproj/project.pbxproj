@@ -10,9 +10,22 @@
 		5AB8B3DD2DA1D48B00CED9FA /* BrickAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BrickAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		5AB8B4242DA2236A00CED9FA /* Exceptions for "BrickAI" folder in "BrickAI" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5AB8B3DC2DA1D48B00CED9FA /* BrickAI */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		5AB8B3DF2DA1D48B00CED9FA /* BrickAI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5AB8B4242DA2236A00CED9FA /* Exceptions for "BrickAI" folder in "BrickAI" target */,
+			);
 			path = BrickAI;
 			sourceTree = "<group>";
 		};
@@ -256,6 +269,7 @@
 				DEVELOPMENT_TEAM = LBM2PA68YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BrickAI/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Turn your surroundings to bricks!";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -287,6 +301,7 @@
 				DEVELOPMENT_TEAM = LBM2PA68YJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BrickAI/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Turn your surroundings to bricks!";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
