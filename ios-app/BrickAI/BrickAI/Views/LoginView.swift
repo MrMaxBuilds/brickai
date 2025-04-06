@@ -116,8 +116,6 @@ struct LoginView: View {
                                         case .failure(let error):
                                              print("LoginView Error: Auth code exchange failed: \(error.localizedDescription)")
                                              handleLoginError(error.localizedDescription) // Show error to user
-                                             // Ensure user state is cleared if exchange fails
-                                             // userManager.clearUser() // Consider if needed - maybe let user retry?
                                         }
                                    } // End NetworkManager.exchangeAuthCode completion
 

@@ -53,17 +53,10 @@ struct HomeView: View {
                                      }
                                      .padding([.top, .trailing]) // Add padding
                                }
-                               .overlay(alignment: .topLeading) { // Example Logout Button
-                                    Button {
-                                         userManager.clearUser()
-                                    } label: {
-                                         Image(systemName: "xmark.circle.fill")
-                                             .font(.title)
-                                             .padding()
-                                             .foregroundColor(.white)
-                                             .shadow(radius: 3)
-                                    }
-                               }
+                               .overlay(alignment: .bottomTrailing) { // Image List Button remains
+                                    NavigationLink(destination: ImageListView()) { Image(systemName: "photo.stack").font(.title2).foregroundColor(.white).padding().background(Color.black.opacity(0.5)).clipShape(Circle()) }
+                                        .padding(.bottom, 40).padding(.trailing)
+                                }
                       } // End else (show camera preview)
                  } else {
                       // --- Show No Permission View ---

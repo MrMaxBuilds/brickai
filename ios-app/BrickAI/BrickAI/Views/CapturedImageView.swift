@@ -32,12 +32,10 @@ struct CapturedImageView: View {
                                cameraManager.resetCaptureState() // Dismiss this view by resetting state
                           }
                      }) {
-                         Image(systemName: "xmark")
-                             .font(.title2)
-                             .foregroundColor(.white)
+                         Image(systemName: "xmark.circle.fill")
+                             .font(.title)
                              .padding()
-                             .background(Color.black.opacity(0.5))
-                             .clipShape(Circle())
+                             .foregroundColor(.white)
                              .shadow(radius: 3)
                      }
                      .disabled(isUploading) // Disable cancel button during upload
@@ -93,7 +91,6 @@ struct CapturedImageView: View {
                                  } else if case .unauthorized = error {
                                       // Suggest session expired
                                       print("CapturedImageView: Handling unauthorized error.")
-                                      // Could trigger logout: UserManager.shared.clearUser()
                                  }
                                  // Other errors (.networkRequestFailed, .serverError, etc.) are displayed generically
                              }

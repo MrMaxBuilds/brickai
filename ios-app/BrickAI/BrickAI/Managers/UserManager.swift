@@ -25,9 +25,9 @@ class UserManager: ObservableObject {
         do {
             try KeychainService.saveString(userIdentifier, forKey: kKeychainAccountUserIdentifier)
             if let name = userName, !name.isEmpty {
-                 try KeychainService.saveString(name, forKey: kKeychainAccountUserName)
+                try KeychainService.saveString(name, forKey: kKeychainAccountUserName)
             } else {
-                 try? KeychainService.deleteData(forKey: kKeychainAccountUserName)
+                try? KeychainService.deleteData(forKey: kKeychainAccountUserName)
             }
             try KeychainService.saveString(sessionToken, forKey: kKeychainAccountSessionToken)
 
@@ -39,7 +39,7 @@ class UserManager: ObservableObject {
             }
         } catch {
             print("UserManager: Failed to save credentials/session token to Keychain: \(error.localizedDescription)")
-             DispatchQueue.main.async { self.clearUser() }
+            DispatchQueue.main.async { self.clearUser() }
         }
     }
 
@@ -47,7 +47,7 @@ class UserManager: ObservableObject {
     func getSessionToken() -> String? {
         do {
             guard let tokenString = KeychainService.loadString(forKey: kKeychainAccountSessionToken) else {
-                 throw KeychainError.itemNotFound
+                throw KeychainError.itemNotFound
             }
             // print("UserManager: Retrieved backend session token from Keychain successfully.") // Less verbose
             return tokenString
@@ -60,29 +60,28 @@ class UserManager: ObservableObject {
         }
     }
 
-    // --- NEW: Update only the session token after a refresh ---
+    // Update only the session token after a refresh
     func updateSessionToken(newToken: String) {
-         do {
-             try KeychainService.saveString(newToken, forKey: kKeychainAccountSessionToken)
-             print("UserManager: Session token updated successfully in Keychain.")
-             // Ensure isLoggedIn remains true if it was already true
-             // No need to change userIdentifier or userName here.
-             if !self.isLoggedIn {
-                 // This case shouldn't really happen during a refresh, but safeguard
-                  DispatchQueue.main.async {
-                       // Re-check based on existence of user ID and new token
-                       self.userIdentifier = KeychainService.loadString(forKey: kKeychainAccountUserIdentifier)
-                       self.isLoggedIn = (self.userIdentifier != nil && !self.userIdentifier!.isEmpty)
-                       print("UserManager: Warning - isLoggedIn was false during token update. Resetting based on user ID presence.")
-                  }
-             }
-         } catch {
-             print("UserManager: Failed to update session token in Keychain: \(error.localizedDescription)")
-             // Consider if we need to logout user if token update fails critically
-             // DispatchQueue.main.async { self.clearUser() }
-         }
+        do {
+            try KeychainService.saveString(newToken, forKey: kKeychainAccountSessionToken)
+            print("UserManager: Session token updated successfully in Keychain.")
+            // Ensure isLoggedIn remains true if it was already true
+            // No need to change userIdentifier or userName here.
+            if !self.isLoggedIn {
+                // This case shouldn't really happen during a refresh, but safeguard
+                DispatchQueue.main.async {
+                    // Re-check based on existence of user ID and new token
+                    self.userIdentifier = KeychainService.loadString(forKey: kKeychainAccountUserIdentifier)
+                    self.isLoggedIn = (self.userIdentifier != nil && !self.userIdentifier!.isEmpty)
+                    print("UserManager: Warning - isLoggedIn was false during token update. Resetting based on user ID presence.")
+                }
+            }
+        } catch {
+            print("UserManager: Failed to update session token in Keychain: \(error.localizedDescription)")
+            // Consider if we need to logout user if token update fails critically
+            // DispatchQueue.main.async { self.clearUser() }
+        }
     }
-    // --- End NEW Function ---
 
     // Clear user data and session token
     func clearUser() {

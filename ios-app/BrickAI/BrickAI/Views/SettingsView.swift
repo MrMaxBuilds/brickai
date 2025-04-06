@@ -17,7 +17,6 @@ struct SettingsView: View {
                    Text("User ID: \(userManager.userIdentifier ?? "N/A")")
                    Button("Log Out", role: .destructive) {
                         userManager.clearUser()
-                        // Dismiss settings view? Might need environment dismiss action
                    }
               }
               // Add other settings sections...
