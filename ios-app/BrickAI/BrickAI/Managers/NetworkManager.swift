@@ -83,9 +83,10 @@ class NetworkManager {
     private static let tokenRefresher = TokenRefresher() // Instance of the actor
 
     private static var jsonDecoder: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return d
+        let decoder = JSONDecoder()
+        // Use a custom formatter that handles fractional seconds and timezone
+        decoder.dateDecodingStrategy = .formatted(DateFormatter.iso8601Full)
+        return decoder
     }()
     
     private static var baseApiEndpointURL: URL? {
@@ -371,4 +372,15 @@ class NetworkManager {
             }
         }
     }
+}
+
+extension DateFormatter {
+  static let iso8601Full: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ" // Format with fractional seconds and timezone
+    formatter.calendar = Calendar(identifier: .iso8601)
+    formatter.timeZone = TimeZone(secondsFromGMT: 0) // Assume UTC or parse timezone from string
+    formatter.locale = Locale(identifier: "en_US_POSIX") // Essential for fixed formats
+    return formatter
+  }()
 }

@@ -1,0 +1,891 @@
+--- File Start: web/src/app/api/auth/apple/callback/route.ts ---
+// File: web/src/app/api/auth/apple/callback/route.ts
+// Updated to use @supabase/supabase-js
+
+import { NextRequest, NextResponse } from 'next/server';
+import jwt, { JwtHeader, SigningKeyCallback } from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+// import { sql } from '@vercel/postgres'; // Removed Vercel PG import
+import { createClient } from '@supabase/supabase-js'; // Added Supabase client import
+
+// --- Environment Variable Check ---
+// Added Supabase variables, removed POSTGRES_URL if not used elsewhere
+const requiredEnvVars = [
+  'APPLE_BUNDLE_ID',
+  'APPLE_SERVICE_ID', // Still needed for client_secret generation's 'sub' claim
+  'APPLE_TEAM_ID',
+  'APPLE_KEY_ID',
+  'APPLE_PRIVATE_KEY',
+  'SUPABASE_URL',               // Supabase URL
+  'SUPABASE_SERVICE_ROLE_KEY', // Supabase Service Role Key (Secret!)
+  'BACKEND_JWT_SECRET'
+];
+
+// Moved checks inside the handler to access env vars after they are potentially loaded
+function checkEnvVars(): { valid: boolean, missing?: string } {
+    for (const varName of requiredEnvVars) {
+        if (!process.env[varName]) {
+            console.error(`Missing required environment variable: ${varName}`);
+            return { valid: false, missing: varName };
+        }
+    }
+    return { valid: true };
+}
+// --- End Environment Variable Check ---
+
+
+// --- Apple Public Key Retrieval (Remains the same) ---
+const appleClient = jwksClient({
+  jwksUri: 'https://appleid.apple.com/auth/keys',
+  cache: true,
+  cacheMaxEntries: 5,
+  cacheMaxAge: 60 * 60 * 1000, // 1 hour
+});
+
+function getAppleSigningKey(header: JwtHeader, callback: SigningKeyCallback): void {
+  if (!header.kid) {
+    return callback(new Error('No kid found in Apple JWT header'));
+  }
+  appleClient.getSigningKey(header.kid, (err, key) => {
+    if (err) {
+      console.error("Error fetching Apple signing key:", err);
+      return callback(err);
+    }
+    const signingKey = key?.getPublicKey();
+    if (!signingKey) {
+        return callback(new Error('Could not get public key from fetched signing key.'));
+    }
+    callback(null, signingKey);
+  });
+}
+// --- End Apple Public Key Retrieval ---
+
+// --- Generate Apple Client Secret (Remains the same - corrected 'sub' claim) ---
+// Ensure APPLE_PRIVATE_KEY is correctly handled before this function is called
+function generateClientSecret(privateKey: string): string {
+    const now = Math.floor(Date.now() / 1000);
+    const claims = {
+        iss: process.env.APPLE_TEAM_ID as string,
+        iat: now,
+        exp: now + 60 * 60, // Expires in 1 hour
+        aud: 'https://appleid.apple.com',
+        sub: process.env.APPLE_BUNDLE_ID as string, // Correctly use Service ID here
+    };
+
+    const token = jwt.sign(claims, privateKey, {
+        algorithm: 'ES256',
+        header: {
+            alg: 'ES256',
+            kid: process.env.APPLE_KEY_ID as string,
+        },
+    });
+    console.log("Generated Apple Client Secret with Service ID as subject.");
+    return token;
+}
+// --- End Generate Apple Client Secret ---
+
+
+// --- Main POST Handler for Code Exchange ---
+export async function POST(req: NextRequest) {
+  let authorizationCode: string;
+  let appleUserId: string | null = null;
+  let userEmail: string | null = null;
+
+  // --- Check Environment Variables ---
+  const envCheck = checkEnvVars();
+  if (!envCheck.valid) {
+    return NextResponse.json(
+        { error: `Internal Server Configuration Error: Missing environment variable: ${envCheck.missing}` },
+        { status: 500 }
+    );
+  }
+  // Process private key only if checks pass
+  const applePrivateKey = (process.env.APPLE_PRIVATE_KEY as string).replace(/\\n/g, '\n');
+  const backendJwtSecret = process.env.BACKEND_JWT_SECRET as string;
+  const supabaseUrl = process.env.SUPABASE_URL as string;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
+
+  try {
+    // --- Initialize Supabase Admin Client ---
+    // Use Service Role Key for backend operations.
+    // Disable session persistence as we are not managing Supabase auth sessions here.
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+        }
+    });
+    console.log("Supabase service client initialized.");
+
+    // --- 1. Get Authorization Code from Request Body ---
+    const body = await req.json();
+    authorizationCode = body.authorizationCode;
+
+    if (!authorizationCode) {
+      return NextResponse.json({ error: 'Missing authorizationCode in request body.' }, { status: 400 });
+    }
+    console.log("Received authorization code from client.");
+
+    // --- 2. Generate Client Secret ---
+    const clientSecret = generateClientSecret(applePrivateKey);
+
+    // --- 3. Exchange Authorization Code for Tokens with Apple ---
+    console.log("Exchanging authorization code with Apple...");
+    const tokenResponse = await fetch('https://appleid.apple.com/auth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: process.env.APPLE_BUNDLE_ID as string, // Use iOS App's Bundle ID
+        client_secret: clientSecret,
+        code: authorizationCode,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+
+    if (!tokenResponse.ok) {
+      console.error('Apple Token Exchange Error:', tokenData);
+      return NextResponse.json({ error: `Apple token exchange failed: ${tokenData.error || 'Unknown error'}` }, { status: tokenResponse.status });
+    }
+    console.log("Successfully exchanged code for tokens.");
+
+    const appleRefreshToken = tokenData.refresh_token;
+    const appleIdToken = tokenData.id_token;
+    console.log("Apple ID Token received (length):", appleIdToken?.length ?? 0); // Avoid logging token
+
+    // --- 4. Verify the Apple ID Token ---
+    console.log("Verifying Apple ID Token...");
+    try {
+      const decodedIdToken = await new Promise<jwt.JwtPayload>((resolve, reject) => {
+        jwt.verify(
+          appleIdToken,
+          getAppleSigningKey,
+          {
+            algorithms: ['RS256'],
+            issuer: 'https://appleid.apple.com',
+            audience: process.env.APPLE_BUNDLE_ID as string, // Correctly check against Bundle ID
+          },
+          (err, decodedPayload) => {
+            if (err) { return reject(err); }
+            if (!decodedPayload || typeof decodedPayload !== 'object') {
+                return reject(new Error("Invalid decoded payload structure"));
+            }
+            resolve(decodedPayload as jwt.JwtPayload);
+          }
+        );
+      });
+
+      if (!decodedIdToken.sub) { throw new Error('Missing "sub" (user ID) claim in Apple ID token.'); }
+      appleUserId = decodedIdToken.sub;
+      userEmail = decodedIdToken.email ?? null;
+      console.log(`Verified Apple User ID (sub): ${appleUserId}, Email: ${userEmail ?? 'N/A'}`);
+
+    } catch (err: unknown) {
+      console.error('Apple ID Token Verification Failed:', err instanceof Error ? err.message : 'Unknown error');
+      let errorMessage = 'Unauthorized: Invalid Apple ID token.';
+      if (err instanceof Error && err.name === 'TokenExpiredError') {
+        errorMessage = 'Unauthorized: Apple ID token has expired.';
+      }
+      return NextResponse.json({ error: errorMessage }, { status: 401 });
+    }
+
+    // --- 5. Database Interaction using Supabase Client ---
+    if (!appleUserId) { throw new Error("appleUserId is null after verification."); }
+
+    console.log(`Upserting user and refresh token for Apple User ID: ${appleUserId} via Supabase`);
+    try {
+        // Use Supabase upsert method
+        const { data: userData, error: dbError } = await supabase
+            .from('users') // MAKE SURE 'users' matches your actual table name in Supabase
+            .upsert(
+                {
+                    apple_user_id: appleUserId,         // Ensure column name matches schema
+                    apple_refresh_token: appleRefreshToken ?? null, // Ensure column name matches schema
+                    email: userEmail ?? null,           // Ensure column name matches schema
+                    // 'updated_at' should be handled by DB default/trigger
+                },
+                {
+                    onConflict: 'apple_user_id', // Specify the UNIQUE constraint column for conflict detection
+                    // ignoreDuplicates: false // Default is false (ensures update if conflict)
+                }
+            )
+            .select('id, apple_user_id, email') // Select the columns you want returned
+            .single(); // We expect only one record (upsert returns the inserted/updated row)
+
+        // Check for Supabase-specific errors
+        if (dbError) {
+            console.error('Supabase Upsert Error:', dbError);
+            throw new Error(`Supabase error (${dbError.code}): ${dbError.message}`); // Throw a descriptive error
+        }
+
+        if (!userData) {
+            // This case might happen if RLS prevents the return, though unlikely with service key
+            throw new Error("Database upsert operation did not return user data.");
+        }
+
+        console.log("User upserted/found in DB via Supabase:", userData);
+        appleUserId = userData.apple_user_id; // Reassign for consistency from returned data
+
+    } catch (dbError: unknown) { // Changed from any to unknown
+        console.error('Database Interaction Error:', dbError);
+        return NextResponse.json({ 
+            error: `Database operation failed: ${dbError instanceof Error ? dbError.message : 'Unknown database error'}` 
+        }, { status: 500 });
+    }
+
+    // --- 6. Generate Backend Session Token (JWT - Remains the same) ---
+    console.log("Generating backend session token...");
+    const sessionTokenPayload = {
+        iss: 'BrickAIBackend',
+        sub: appleUserId,
+        exp: Math.floor(Date.now() / 1000) + (30 * 60), // 30 Minutes
+        iat: Math.floor(Date.now() / 1000),
+    };
+    const sessionToken = jwt.sign(sessionTokenPayload, backendJwtSecret, { algorithm: 'HS256' });
+    console.log("Backend session token generated.");
+
+
+    // --- 7. Return Session Token to Client (Remains the same) ---
+    return NextResponse.json({
+        message: 'Authentication successful',
+        sessionToken: sessionToken,
+        userId: appleUserId,
+        email: userEmail
+    });
+
+  } catch (err: unknown) {
+    console.error('Unhandled Authentication Error:', err);
+    // Generic fallback error
+    let message = 'Authentication process failed.';
+    if (err instanceof Error) {
+        message = err.message; // Use error message if available
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+--- File End: web/src/app/api/auth/apple/callback/route.ts ---
+
+
+--- File Start: web/src/app/api/auth/refresh/route.ts ---
+// File: web/src/app/api/auth/refresh/route.ts
+// Corrected TypeScript types AGAIN
+
+import { NextRequest, NextResponse } from 'next/server';
+import jwt, { JwtHeader, SigningKeyCallback, VerifyOptions, JwtPayload } from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+import { createClient } from '@supabase/supabase-js';
+
+// --- Environment Variable Check (Same as before) ---
+const requiredEnvVars = [
+  'APPLE_BUNDLE_ID',
+  'APPLE_SERVICE_ID',
+  'APPLE_TEAM_ID',
+  'APPLE_KEY_ID',
+  'APPLE_PRIVATE_KEY',
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'BACKEND_JWT_SECRET'
+];
+
+function checkEnvVars(): { valid: boolean, missing?: string } {
+    for (const varName of requiredEnvVars) {
+        if (!process.env[varName]) {
+            console.error(`Refresh Route: Missing required environment variable: ${varName}`);
+            return { valid: false, missing: varName };
+        }
+    }
+    if (!process.env.APPLE_PRIVATE_KEY || !(process.env.APPLE_PRIVATE_KEY as string).includes('-----BEGIN PRIVATE KEY-----')) {
+        console.error('Refresh Route: APPLE_PRIVATE_KEY environment variable seems malformed or missing.');
+        return { valid: false, missing: 'APPLE_PRIVATE_KEY (Malformed)' };
+    }
+    return { valid: true };
+}
+// --- End Environment Variable Check ---
+
+
+// --- Apple Public Key Retrieval (Same as before) ---
+const appleClient = jwksClient({
+  jwksUri: 'https://appleid.apple.com/auth/keys',
+  cache: true,
+  cacheMaxEntries: 5,
+  cacheMaxAge: 60 * 60 * 1000, // 1 hour
+});
+
+function getAppleSigningKey(header: JwtHeader, callback: SigningKeyCallback): void {
+  if (!header.kid) { return callback(new Error('No kid found in Apple JWT header')); }
+  appleClient.getSigningKey(header.kid, (err, key) => {
+    if (err) { console.error("Error fetching Apple signing key:", err); return callback(err); }
+    const signingKey = key?.getPublicKey();
+    if (!signingKey) { return callback(new Error('Could not get public key from fetched signing key.')); }
+    callback(null, signingKey);
+  });
+}
+// --- End Apple Public Key Retrieval ---
+
+// --- Generate Apple Client Secret (Same as before) ---
+function generateClientSecret(privateKey: string): string {
+    const now = Math.floor(Date.now() / 1000);
+    const claims = {
+        iss: process.env.APPLE_TEAM_ID as string, iat: now, exp: now + 60 * 60,
+        aud: 'https://appleid.apple.com',
+        // NOTE: Per Apple docs, 'sub' should likely be APPLE_SERVICE_ID here. Using BUNDLE_ID based on user state.
+        sub: process.env.APPLE_BUNDLE_ID as string,
+    };
+    const token = jwt.sign(claims, privateKey, {
+        algorithm: 'ES256', header: { alg: 'ES256', kid: process.env.APPLE_KEY_ID as string },
+    });
+    return token;
+}
+// --- End Generate Apple Client Secret ---
+
+
+// --- Main POST Handler for Refreshing Backend Session Token ---
+export async function POST(req: NextRequest) {
+  let appleUserId: string; // Changed: Initialize later after verification
+  let storedAppleRefreshToken: string; // Changed: Initialize later
+
+  // --- Check Environment Variables ---
+  const envCheck = checkEnvVars();
+  if (!envCheck.valid) {
+    return NextResponse.json( { error: `Internal Server Configuration Error: Missing environment variable: ${envCheck.missing}` }, { status: 500 } );
+  }
+  const applePrivateKey = (process.env.APPLE_PRIVATE_KEY as string).replace(/\\n/g, '\n');
+  const backendJwtSecret = process.env.BACKEND_JWT_SECRET as string;
+  const supabaseUrl = process.env.SUPABASE_URL as string;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
+
+  try {
+    // --- 1. Get Expired Backend Token and Extract User ID ---
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing Authorization header.' }, { status: 401 });
+    }
+    const expiredToken = authHeader.substring(7);
+
+    try {
+        const decoded = jwt.verify(
+            expiredToken, backendJwtSecret,
+            { algorithms: ['HS256'], issuer: 'BrickAIBackend', ignoreExpiration: true }
+        );
+
+        // **REVISED FIX 1 START: Check type and 'sub' property robustly**
+        if (typeof decoded === 'object' && decoded !== null && typeof decoded.sub === 'string') {
+            appleUserId = decoded.sub; // Assign only if check passes
+        } else {
+            // Throw error if 'decoded' is not an object or 'sub' is missing/not a string
+            throw new Error('Invalid token payload structure or missing/invalid sub claim.');
+        }
+        // **REVISED FIX 1 END**
+
+        console.log(`Refresh Route: Verified expired token signature for Apple User ID: ${appleUserId}`);
+
+    } catch (err: unknown) {
+        console.error('Refresh Route: Invalid backend token provided:', err instanceof Error ? err.message : 'Unknown error');
+        let errorMessage = 'Unauthorized: Invalid token provided for refresh.';
+        if (err instanceof Error && err.name === 'JsonWebTokenError') {
+             errorMessage = 'Unauthorized: Malformed token provided for refresh.';
+        }
+        return NextResponse.json({ error: errorMessage }, { status: 401 });
+    }
+
+    // --- 2. Initialize Supabase Admin Client (code unchanged) ---
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    });
+
+    // --- 3. Retrieve Stored Apple Refresh Token from Database (code unchanged) ---
+    console.log(`Refresh Route: Fetching Apple refresh token for user: ${appleUserId}`);
+    try {
+        const { data: userData, error: fetchError } = await supabase
+            .from('users').select('apple_refresh_token').eq('apple_user_id', appleUserId).single();
+
+        if (fetchError) { throw new Error(`Supabase error (${fetchError.code}): ${fetchError.message}`); }
+        if (!userData) { return NextResponse.json({ error: 'Unauthorized: User not found.' }, { status: 401 }); }
+        if (!userData.apple_refresh_token) { return NextResponse.json({ error: 'Unauthorized: Refresh token not available.' }, { status: 401 }); }
+
+        storedAppleRefreshToken = userData.apple_refresh_token; // Assign here
+        console.log(`Refresh Route: Retrieved Apple refresh token for user: ${appleUserId}`);
+
+    } catch (dbError: unknown) {
+        console.error('Refresh Route: Database Error fetching refresh token:', 
+          dbError instanceof Error ? dbError.message : 'Unknown error');
+        return NextResponse.json({ 
+          error: `Database operation failed: ${dbError instanceof Error ? dbError.message : 'Unknown database error'}` 
+        }, { status: 500 });
+    }
+
+    // --- 4. Generate NEW Client Secret (code unchanged) ---
+    const clientSecret = generateClientSecret(applePrivateKey);
+
+    // --- 5. Exchange Apple Refresh Token for New Tokens with Apple ---
+    console.log("Refresh Route: Exchanging Apple refresh token with Apple...");
+    let newAppleIdToken: string | undefined;
+    let newAppleRefreshToken: string | undefined;
+
+    // No need for !storedAppleRefreshToken check here as step 3 guarantees it's assigned if we reach here.
+
+    try {
+        const tokenResponse = await fetch('https://appleid.apple.com/auth/token', {
+            method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                client_id: process.env.APPLE_BUNDLE_ID as string, client_secret: clientSecret,
+                grant_type: 'refresh_token', refresh_token: storedAppleRefreshToken, // Known to be string here
+            }),
+        });
+        const tokenData = await tokenResponse.json();
+
+        if (!tokenResponse.ok) {
+            console.error('Refresh Route: Apple Token Refresh Error:', tokenData);
+            if (tokenData.error === 'invalid_grant') {
+                 console.warn(`Refresh Route: Apple refresh token invalid_grant for user ${appleUserId}. Token might be revoked.`);
+                 try { await supabase.from('users').update({ apple_refresh_token: null }).eq('apple_user_id', appleUserId); }
+                 catch(clearError: unknown) {
+                   console.error(`Refresh Route: Failed to clear invalid refresh token for user ${appleUserId}:`, 
+                     clearError instanceof Error ? clearError.message : 'Unknown error'); 
+                 }
+                 return NextResponse.json({ error: 'Unauthorized: Apple refresh token invalid or revoked.' }, { status: 401 });
+            }
+            return NextResponse.json({ error: `Apple token refresh failed: ${tokenData.error || 'Unknown error'}` }, { status: tokenResponse.status });
+        }
+        console.log("Refresh Route: Successfully exchanged Apple refresh token.");
+        newAppleIdToken = tokenData.id_token; newAppleRefreshToken = tokenData.refresh_token;
+        if (!newAppleIdToken) { throw new Error("Apple did not return a new id_token during refresh."); }
+
+    } catch (exchangeError: unknown) {
+         console.error('Refresh Route: Error during fetch to Apple /auth/token:', 
+           exchangeError instanceof Error ? exchangeError.message : 'Unknown error');
+         return NextResponse.json({ 
+           error: `Failed to communicate with Apple for token refresh: ${exchangeError instanceof Error ? exchangeError.message : 'Unknown error'}` 
+         }, { status: 502 });
+    }
+
+    // --- 6. Verify the NEW Apple ID Token ---
+    console.log("Refresh Route: Verifying new Apple ID Token...");
+    try {
+        // Use Promise<void> as we only care about success/failure of verification here
+        await new Promise<void>((resolve, reject) => {
+            jwt.verify(
+                newAppleIdToken!, getAppleSigningKey,
+                { algorithms: ['RS256'], issuer: 'https://appleid.apple.com', audience: process.env.APPLE_BUNDLE_ID as string } as VerifyOptions,
+                (err, decodedPayload) => {
+                    const payload = decodedPayload as JwtPayload;
+                    if (err) { return reject(err); }
+
+                    // **REVISED FIX 1 (Verification) START: Check type and 'sub' property robustly**
+                    if (typeof decodedPayload !== 'object' || decodedPayload === null || typeof payload.sub !== 'string') {
+                        return reject(new Error("Invalid ID token payload structure or missing/invalid 'sub' claim"));
+                    }
+                    // Check 'sub' matches original user ID (which is now guaranteed non-null)
+                    if (payload.sub !== appleUserId) {
+                         return reject(new Error(`ID token 'sub' (${payload.sub}) does not match original user (${appleUserId})`));
+                    }
+                    // **REVISED FIX 1 (Verification) END**
+
+                    // If all checks pass, resolve the promise
+                    resolve();
+                }
+            );
+        });
+        console.log(`Refresh Route: Verified new Apple ID token for user: ${appleUserId}`); // Log original ID is fine
+
+    } catch (err: unknown) {
+        console.error('Refresh Route: New Apple ID Token Verification Failed:', err instanceof Error ? err.message : 'Unknown error');
+        let errorMessage = 'Unauthorized: Invalid new Apple ID token received.';
+        if (err instanceof Error && err.name === 'TokenExpiredError') { errorMessage = 'Unauthorized: New Apple ID token is already expired.'; }
+        return NextResponse.json({ error: errorMessage }, { status: 401 });
+    }
+
+    // --- 7. Update Stored Refresh Token (if necessary - code unchanged) ---
+    if (newAppleRefreshToken && newAppleRefreshToken !== storedAppleRefreshToken) {
+        console.log(`Refresh Route: Apple issued a new refresh token for user ${appleUserId}. Updating database.`);
+        try {
+            const { error: updateError } = await supabase.from('users').update({ apple_refresh_token: newAppleRefreshToken }).eq('apple_user_id', appleUserId);
+            if (updateError) { console.error(`Refresh Route: Failed to update new Apple refresh token in DB for user ${appleUserId}:`, updateError.message); }
+            else { console.log(`Refresh Route: Successfully updated new Apple refresh token for user ${appleUserId}.`); }
+        } catch (dbUpdateError: unknown) {
+          console.error(`Refresh Route: Exception during DB update for new refresh token for user ${appleUserId}:`, 
+            dbUpdateError instanceof Error ? dbUpdateError.message : 'Unknown error'); 
+        }
+    }
+
+    // --- 8. Generate NEW Backend Session Token (code unchanged) ---
+    console.log("Refresh Route: Generating new backend session token...");
+    const newSessionTokenPayload = {
+        iss: 'BrickAIBackend', sub: appleUserId,
+        exp: Math.floor(Date.now() / 1000) + (30 * 60), // 30 Minutes
+        iat: Math.floor(Date.now() / 1000),
+    };
+    const newSessionToken = jwt.sign(newSessionTokenPayload, backendJwtSecret, { algorithm: 'HS256' });
+    console.log("Refresh Route: New backend session token generated.");
+
+    // --- 9. Return NEW Session Token to Client (code unchanged) ---
+    return NextResponse.json({ sessionToken: newSessionToken });
+
+  } catch (err: unknown) {
+    console.error('Refresh Route: Unhandled Error:', err);
+    let message = 'Session refresh process failed.';
+    if (err instanceof Error) { message = err.message; }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+--- File End: web/src/app/api/auth/refresh/route.ts ---
+
+
+--- File Start: web/src/app/api/images/route.ts ---
+// File: web/src/app/api/images/route.ts
+// Route to list images, fixed 'any' types
+
+import { NextRequest, NextResponse } from "next/server";
+import jwt from "jsonwebtoken";
+import { createClient } from "@supabase/supabase-js";
+
+// --- Environment Variable Check (remains the same) ---
+const requiredEnvVars = [
+  "BACKEND_JWT_SECRET",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "AWS_S3_BUCKET_NAME",
+  "AWS_REGION",
+];
+function checkEnvVars(): { valid: boolean; missing?: string } {
+  /* ... same as before ... */
+  for (const varName of requiredEnvVars) {
+    if (!process.env[varName]) return { valid: false, missing: varName };
+  }
+  return { valid: true };
+}
+// --- End Environment Variable Check ---
+
+// Helper getS3Url (remains the same)
+function getS3Url(
+  bucket: string,
+  region: string,
+  key: string | null | undefined
+): string | null {
+  /* ... same as before ... */
+  if (!key) return null;
+  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+}
+
+// Define ImageResponse interface (using Int for ID if needed, but backend sends whatever DB has - usually number/string)
+// Client-side Swift struct handles the concrete type (Int).
+interface ImageResponseItem {
+  id: number | string; // Changed from UUID
+  status: string;
+  prompt: string | null;
+  createdAt: string;
+  originalImageUrl: string | null;
+  processedImageUrl: string | null;
+}
+
+// --- Main GET Handler ---
+export async function GET(req: NextRequest) {
+  let appleUserId: string;
+
+  const envCheck = checkEnvVars();
+  if (!envCheck.valid) {
+    return NextResponse.json(
+      { error: `Config Error: Missing ${envCheck.missing}` },
+      { status: 500 }
+    );
+  }
+  const backendJwtSecret = process.env.BACKEND_JWT_SECRET as string;
+  const supabaseUrl = process.env.SUPABASE_URL as string;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
+  const awsS3BucketName = process.env.AWS_S3_BUCKET_NAME as string;
+  const awsRegion = process.env.AWS_REGION as string;
+
+  try {
+    // --- 1. Verify Backend Session Token ---
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Unauthorized: Missing Authorization header." },
+        { status: 401 }
+      );
+    }
+    const sessionToken = authHeader.substring(7);
+
+    try {
+      const decoded = jwt.verify(sessionToken, backendJwtSecret, {
+        algorithms: ["HS256"],
+        issuer: "BrickAIBackend",
+      });
+      if (
+        typeof decoded === "object" &&
+        decoded !== null &&
+        typeof decoded.sub === "string"
+      ) {
+        appleUserId = decoded.sub;
+      } else {
+        throw new Error(
+          "Invalid token payload structure or missing/invalid sub claim."
+        );
+      }
+      console.log(
+        `Images Route: Verified session token for Apple User ID (sub): ${appleUserId}`
+      );
+    } catch (err: unknown) {
+      // Use 'unknown'
+      let errorMessage = "Unauthorized: Invalid session token.";
+      if (err instanceof Error) {
+        // Check if it's an Error
+        console.error(
+          "Images Route: Backend Session Token Verification Error:",
+          err.message
+        );
+        if (err.name === "TokenExpiredError") {
+          errorMessage = "Unauthorized: Session has expired.";
+        }
+      } else {
+        console.error(
+          "Images Route: Backend Session Token Verification Error: Caught non-Error object"
+        );
+      }
+      return NextResponse.json({ error: errorMessage }, { status: 401 });
+    }
+    // --- End Token Verification ---
+
+    // --- 2. Initialize Supabase Client (remains the same) ---
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false },
+    });
+
+    // --- 3. Fetch Image Records from Database ---
+    console.log(`Images Route: Fetching images for user: ${appleUserId}`);
+    // Select specific columns including the SERIAL 'id'
+    const { data: imagesData, error: dbError } = await supabase
+      .from("images")
+      .select(
+        "id, status, prompt, created_at, original_s3_key, processed_s3_key"
+      )
+      .eq("apple_user_id", appleUserId)
+      .order("created_at", { ascending: false });
+
+    if (dbError) {
+      console.error("Images Route: Supabase select error:", dbError);
+      return NextResponse.json(
+        { error: `Failed to fetch images: ${dbError.message}` },
+        { status: 500 }
+      );
+    }
+    if (!imagesData) {
+      return NextResponse.json([]);
+    } // Return empty array if no images
+
+    // --- 4. Process Results and Construct URLs ---
+    // Map DB results to the response structure
+    const responseImages: ImageResponseItem[] = imagesData.map((img) => ({
+      id: img.id, // Pass the ID (number or string depending on client)
+      status: img.status,
+      prompt: img.prompt,
+      createdAt: img.created_at,
+      originalImageUrl: getS3Url(
+        awsS3BucketName,
+        awsRegion,
+        img.original_s3_key
+      ),
+      processedImageUrl: getS3Url(
+        awsS3BucketName,
+        awsRegion,
+        img.processed_s3_key
+      ),
+    }));
+
+    // --- 5. Return Response ---
+    console.log(
+      `Images Route: Returning ${responseImages.length} images for user ${appleUserId}.`
+    );
+    return NextResponse.json(responseImages);
+  } catch (err: unknown) {
+    // Use 'unknown'
+    console.error("Images Route: Unhandled Error:", err);
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Internal server error while fetching images.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+--- File End: web/src/app/api/images/route.ts ---
+
+
+--- File Start: web/src/app/api/upload/route.ts ---
+// File: web/src/app/api/upload/route.ts
+// Modified to save image metadata to Supabase after S3 upload
+
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { NextRequest, NextResponse } from 'next/server';
+import { v4 as uuidv4 } from 'uuid';
+import jwt from 'jsonwebtoken'; // Removed unused JwtPayload import
+import { createClient } from '@supabase/supabase-js'; // Supabase client
+
+// --- Environment Variable Check ---
+// Add Supabase & ensure S3/JWT vars are present
+const requiredEnvVars = [
+  'AWS_REGION',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_S3_BUCKET_NAME',
+  'BACKEND_JWT_SECRET',
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY'
+];
+
+function checkEnvVars(): { valid: boolean, missing?: string } {
+    for (const varName of requiredEnvVars) {
+        if (!process.env[varName]) {
+            console.error(`Upload Route: Missing required environment variable: ${varName}`);
+            return { valid: false, missing: varName };
+        }
+    }
+    return { valid: true };
+}
+// --- End Environment Variable Check ---
+
+
+// Helper function to get a file extension (remains the same)
+function getExtensionFromContentType(contentType: string | null): string {
+  if (!contentType) return 'bin';
+  // Keep jpg as default? Or make bin default? Let's keep jpg for images.
+  const defaultExt = 'jpg'; // Changed from let to const
+  switch (contentType.toLowerCase()) {
+    case 'image/jpeg': return 'jpg';
+    case 'image/png': return 'png';
+    case 'image/gif': return 'gif';
+    case 'image/webp': return 'webp';
+    case 'image/svg+xml': return 'svg';
+    default:
+      const subtype = contentType.split('/')[1];
+      return subtype ? subtype.split('+')[0] : defaultExt;
+  }
+}
+
+// Helper to construct S3 URL
+function getS3Url(bucket: string, region: string, key: string): string {
+    return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+}
+
+// --- Main POST Handler ---
+export async function POST(req: NextRequest) {
+  let appleUserId: string; // Initialize after verification
+
+  // --- Check Environment Variables ---
+  const envCheck = checkEnvVars();
+  if (!envCheck.valid) {
+    return NextResponse.json({ error: `Internal Server Configuration Error: Missing env var: ${envCheck.missing}` }, { status: 500 });
+  }
+  const backendJwtSecret = process.env.BACKEND_JWT_SECRET as string;
+  const supabaseUrl = process.env.SUPABASE_URL as string;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
+  const awsRegion = process.env.AWS_REGION as string;
+  const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID as string;
+  const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY as string;
+  const awsS3BucketName = process.env.AWS_S3_BUCKET_NAME as string;
+
+  try {
+    // --- 1. Verify Backend Session Token ---
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing or invalid Authorization header.' }, { status: 401 });
+    }
+    const sessionToken = authHeader.substring(7);
+
+    try {
+        const decoded = jwt.verify(sessionToken, backendJwtSecret, {
+            algorithms: ['HS256'], issuer: 'BrickAIBackend'
+        });
+        // Type check for 'sub'
+        if (typeof decoded === 'object' && decoded !== null && typeof decoded.sub === 'string') {
+            appleUserId = decoded.sub;
+        } else {
+            throw new Error('Invalid token payload structure or missing/invalid sub claim.');
+        }
+        console.log(`Upload Route: Verified session token for Apple User ID (sub): ${appleUserId}`);
+
+    } catch (err: unknown) {
+        console.error('Upload Route: Backend Session Token Verification Error:', 
+          err instanceof Error ? err.message : 'Unknown error');
+        let errorMessage = 'Unauthorized: Invalid session token.';
+        if (err instanceof Error && err.name === 'TokenExpiredError') { 
+          errorMessage = 'Unauthorized: Session has expired.'; 
+        }
+        // NOTE: This route doesn't automatically trigger refresh. Client needs to handle 401.
+        return NextResponse.json({ error: errorMessage }, { status: 401 });
+    }
+    // --- End Token Verification ---
+
+
+    // --- 2. Process Image Upload ---
+    const contentType = req.headers.get('content-type');
+    if (!contentType || !contentType.startsWith('image/')) {
+      return NextResponse.json({ error: 'Invalid Content-Type. Must be an image type.' }, { status: 400 });
+    }
+    const buffer = await req.arrayBuffer();
+    if (!buffer || buffer.byteLength === 0) {
+      return NextResponse.json({ error: 'No image data received in request body' }, { status: 400 });
+    }
+    const body = Buffer.from(buffer);
+
+    // --- 3. Upload to S3 ---
+    const s3Client = new S3Client({
+        region: awsRegion,
+        credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey },
+    });
+
+    const fileExtension = getExtensionFromContentType(contentType);
+    // S3 Key includes user ID for organization
+    const s3Key = `images/${appleUserId}/${uuidv4()}.${fileExtension}`;
+
+    const uploadParams = { Bucket: awsS3BucketName, Key: s3Key, Body: body, ContentType: contentType };
+    console.log(`Upload Route: Uploading to S3 key: ${s3Key}`);
+    await s3Client.send(new PutObjectCommand(uploadParams));
+    console.log(`Upload Route: Successfully uploaded to S3.`);
+
+    // --- 4. Save Metadata to Supabase ---
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    });
+
+    console.log(`Upload Route: Saving image metadata to Supabase for user ${appleUserId}`);
+    const { error: dbError } = await supabase
+        .from('images') // Ensure 'images' matches your table name
+        .insert({
+            apple_user_id: appleUserId,
+            original_s3_key: s3Key,
+            status: 'UPLOADED'
+            // prompt will be null by default if column allows null
+        });
+
+    if (dbError) {
+        // Log the DB error but potentially proceed? Or return failure?
+        // If DB write fails, the S3 upload is orphaned. Best to return an error.
+        console.error('Upload Route: Supabase insert error:', dbError);
+        // Consider cleanup of S3 object? Complex. Let's return error for now.
+        return NextResponse.json({ error: `Failed to save image metadata: ${dbError.message}` }, { status: 500 });
+    }
+    console.log(`Upload Route: Successfully saved metadata to Supabase.`);
+
+    // --- 5. Construct Response ---
+    const originalImageUrl = getS3Url(awsS3BucketName, awsRegion, s3Key);
+
+    // Return success response with the URL of the *original* uploaded image
+    return NextResponse.json({
+      message: 'Image uploaded and metadata saved successfully',
+      url: originalImageUrl // Send back the URL as before
+    });
+
+  } catch (err: unknown) {
+    console.error('Upload Route: Unhandled Error:', 
+      err instanceof Error ? err.message : 'Unknown error');
+    return NextResponse.json({ error: 'Internal server error during upload processing.' }, { status: 500 });
+  }
+}
+--- File End: web/src/app/api/upload/route.ts ---
+
+

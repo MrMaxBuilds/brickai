@@ -1,51 +1,84 @@
-//
-//  ImageDetailView.swift
-//  BrickAI
-//
-//  Created by Max U on 4/6/25.
-//
-
-
 // File: BrickAI/Views/ImageDetailView.swift
-// Full Untruncated File - No changes needed
+// Full Untruncated File - Reviewed, Formatted
 
 import SwiftUI
 
 struct ImageDetailView: View {
-    let image: ImageData // Accepts ImageData with Int ID
+    let image: ImageData
 
     var body: some View {
         ScrollView {
             VStack(alignment: .center, spacing: 20) {
-                AsyncImage(url: image.processedImageUrl ?? image.originalImageUrl) { phase in
-                    // Placeholder/Image logic...
-                    if let img = phase.image { img.resizable().scaledToFit().cornerRadius(10).shadow(radius: 5) }
-                    else if phase.error != nil { VStack { Image(systemName: "xmark.octagon.fill").foregroundColor(.red); Text("Load Failed") } .frame(height: 300) }
-                    else { ProgressView().frame(height: 300) }
-                }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Status: \(image.status.capitalized)").font(.title2).fontWeight(.semibold)
-                    if let prompt = image.prompt, !prompt.isEmpty {
-                        Text("Prompt:").font(.headline); Text(prompt).font(.body).foregroundColor(.secondary)
+                AsyncImage(url: image.processedImageUrl ?? image.originalImageUrl) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                            .frame(maxWidth: .infinity) // Allow ProgressView to center
+                            .frame(height: 300)
+                    case .success(let loadedImage):
+                        loadedImage
+                            .resizable()
+                            .scaledToFit()
+                            .cornerRadius(10)
+                            .shadow(radius: 5)
+                            .padding(.horizontal) // Add horizontal padding if image is narrower than screen
+                    case .failure:
+                        VStack {
+                            Image(systemName: "photo.fill.on.rectangle.fill") // More descriptive icon
+                                 .font(.largeTitle)
+                                 .foregroundColor(.secondary)
+                            Text("Failed to load image")
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 300)
+                    @unknown default:
+                        EmptyView()
                     }
-                    Text("Uploaded:").font(.headline)
-                    Text("\(image.createdAt, style: .date), \(image.createdAt, style: .time)").font(.body).foregroundColor(.secondary)
                 }
-                .padding(.horizontal)
+                .frame(maxWidth: .infinity) // Center AsyncImage content horizontally
+
+                // Details Section
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Status: \(image.status.capitalized)")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Divider() // Add divider
+
+                    if let prompt = image.prompt, !prompt.isEmpty {
+                        Text("Prompt")
+                            .font(.headline)
+                        Text(prompt)
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                        Divider()
+                    }
+
+                    Text("Uploaded")
+                        .font(.headline)
+                    // Use formatted styles for better presentation
+                    Text(image.createdAt.formatted(date: .long, time: .shortened))
+                         .font(.body)
+                         .foregroundColor(.secondary)
+                }
+                .padding(.horizontal) // Padding for text details
+
                 Spacer()
             }
-            .padding()
+            .padding(.vertical) // Vertical padding for the outer VStack
         }
         .navigationTitle("Image Details")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
 
+// ImageDetailView_Previews remains the same
 struct ImageDetailView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
-             ImageDetailView(image: ImageData.previewData[0]) // Uses preview data with Int ID
+             ImageDetailView(image: ImageData.previewData[0])
         }
     }
 }
