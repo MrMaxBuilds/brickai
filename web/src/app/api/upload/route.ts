@@ -33,8 +33,8 @@ async function processImageAndLogStream(
     piApiKey: string
 ): Promise<void> { // Returns void, updates status internally
     const processingApiUrl = 'https://api.piapi.ai/v1/chat/completions';
-    const defaultPrompt = "Make this image better."; // Still using placeholder
-    let success = false; // Flag to track successful completion of the *entire* process
+    const defaultPrompt = "Turn this person or people into lego people! They are made of small, individual lego bricks so that someone could build them out of a lego box. Emulate legoland figures";
+    let success = false;
     let fullContentString = ''; // Accumulator for the content fragments
     let processingError: Error | null = null; // Store error during processing
     let failureReason = "Unknown processing error"; // Default reason
