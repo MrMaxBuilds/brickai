@@ -1,43 +1,68 @@
+// MARK: MODIFIED FILE - Views/ImageDetailView.swift
 // File: BrickAI/Views/ImageDetailView.swift
-// Full Untruncated File - Reviewed, Formatted
+// Updated to use ImageDataManager cache
 
 import SwiftUI
 
 struct ImageDetailView: View {
     let image: ImageData
+    // MARK: <<< ADDED START >>>
+    // Get ImageDataManager from environment
+    @EnvironmentObject var imageDataManager: ImageDataManager
+    // MARK: <<< ADDED END >>>
 
     var body: some View {
         ScrollView {
             VStack(alignment: .center, spacing: 20) {
 
-                AsyncImage(url: image.processedImageUrl ?? image.originalImageUrl) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .frame(maxWidth: .infinity) // Allow ProgressView to center
-                            .frame(height: 300)
-                    case .success(let loadedImage):
-                        loadedImage
+                // MARK: <<< MODIFIED START >>>
+                // Check cache first
+                let imageUrl = image.processedImageUrl ?? image.originalImageUrl
+                let cachedImage = imageDataManager.getImage(for: imageUrl)
+
+                Group { // Use Group to apply frame/modifiers consistently
+                    if let loadedImage = cachedImage {
+                        // Display cached image
+                        Image(uiImage: loadedImage)
                             .resizable()
                             .scaledToFit()
-                            .cornerRadius(10)
-                            .shadow(radius: 5)
-                            .padding(.horizontal) // Add horizontal padding if image is narrower than screen
-                    case .failure:
-                        VStack {
-                            Image(systemName: "photo.fill.on.rectangle.fill") // More descriptive icon
-                                 .font(.largeTitle)
-                                 .foregroundColor(.secondary)
-                            Text("Failed to load image")
-                                .foregroundColor(.secondary)
+
+                    } else {
+                        // Fallback to AsyncImage
+                        AsyncImage(url: imageUrl) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                                    .frame(height: 300) // Maintain height during load
+                            case .success(let loadedImage):
+                                loadedImage
+                                    .resizable()
+                                    .scaledToFit()
+                            case .failure:
+                                VStack {
+                                    Image(systemName: "photo.fill.on.rectangle.fill") // More descriptive icon
+                                         .font(.largeTitle)
+                                         .foregroundColor(.secondary)
+                                    Text("Failed to load image")
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(height: 300) // Maintain height on failure
+                            @unknown default:
+                                EmptyView()
+                            }
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 300)
-                    @unknown default:
-                        EmptyView()
+                         // Trigger explicit cache load if image wasn't preloaded
+                         .onAppear {
+                              imageDataManager.ensureImageIsCached(for: imageUrl)
+                         }
                     }
                 }
-                .frame(maxWidth: .infinity) // Center AsyncImage content horizontally
+                .frame(maxWidth: .infinity) // Center AsyncImage/Image content horizontally
+                .cornerRadius(10)
+                .shadow(radius: 5)
+                .padding(.horizontal) // Add horizontal padding if image is narrower than screen
+                // MARK: <<< MODIFIED END >>>
+
 
                 // Details Section
                 VStack(alignment: .leading, spacing: 10) {
@@ -71,14 +96,11 @@ struct ImageDetailView: View {
         }
         .navigationTitle("Image Details")
         .navigationBarTitleDisplayMode(.inline)
+         // MARK: <<< ADDED START >>>
+         // Inject the environment object needed by this view
+         .environmentObject(imageDataManager)
+         // MARK: <<< ADDED END >>>
     }
 }
 
-// ImageDetailView_Previews remains the same
-struct ImageDetailView_Previews: PreviewProvider {
-    static var previews: some View {
-        NavigationView {
-             ImageDetailView(image: ImageData.previewData[0])
-        }
-    }
-}
+// MARK: END MODIFIED FILE - Views/ImageDetailView.swift

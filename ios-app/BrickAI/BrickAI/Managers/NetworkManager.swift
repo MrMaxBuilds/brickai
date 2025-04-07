@@ -1,11 +1,14 @@
+// MARK: MODIFIED FILE - Managers/NetworkManager.swift
 // File: BrickAI/Managers/NetworkManager.swift
-// Full Untruncated File - Corrected Actor Isolation for TokenRefresher
+// Full Untruncated File - Added Equatable conformance to NetworkError.
 
 import Foundation
 import UIKit
 
-// NetworkError Enum (remains the same as previous version)
-enum NetworkError: Error, LocalizedError {
+// MARK: <<< MODIFIED START >>>
+// NetworkError Enum - Added Equatable conformance
+enum NetworkError: Error, LocalizedError, Equatable {
+// MARK: <<< MODIFIED END >>>
     case invalidURL(String)
     case dataConversionFailed
     case authenticationTokenMissing
@@ -34,6 +37,39 @@ enum NetworkError: Error, LocalizedError {
         case .sessionExpired: return "Your session has expired. Please log in again."
         }
     }
+
+    // MARK: <<< ADDED START >>>
+    // Implementation of Equatable conformance
+    static func == (lhs: NetworkError, rhs: NetworkError) -> Bool {
+        switch (lhs, rhs) {
+        case (.invalidURL(let lhsString), .invalidURL(let rhsString)):
+            return lhsString == rhsString
+        case (.dataConversionFailed, .dataConversionFailed):
+            return true
+        case (.authenticationTokenMissing, .authenticationTokenMissing):
+            return true
+        case (.networkRequestFailed(let lhsError), .networkRequestFailed(let rhsError)):
+            // Comparing actual Error objects is difficult.
+            // Compare based on localizedDescription for pragmatic equality check.
+            return lhsError.localizedDescription == rhsError.localizedDescription
+        case (.serverError(let lhsCode, let lhsMessage), .serverError(let rhsCode, let rhsMessage)):
+            return lhsCode == rhsCode && lhsMessage == rhsMessage
+        case (.unauthorized, .unauthorized):
+            return true
+        case (.unexpectedResponse, .unexpectedResponse):
+            return true
+        case (.authCodeExchangeFailed(let lhsMessage), .authCodeExchangeFailed(let rhsMessage)):
+            return lhsMessage == rhsMessage
+        case (.tokenRefreshFailed(let lhsMessage), .tokenRefreshFailed(let rhsMessage)):
+            return lhsMessage == rhsMessage
+        case (.sessionExpired, .sessionExpired):
+            return true
+        // If none of the cases match, they are not equal
+        default:
+            return false
+        }
+    }
+    // MARK: <<< ADDED END >>>
 }
 
 // Actor to manage the refresh token state and prevent race conditions
@@ -384,3 +420,4 @@ extension DateFormatter {
     return formatter
   }()
 }
+// MARK: END MODIFIED FILE - Managers/NetworkManager.swift
