@@ -317,7 +317,7 @@ class ImageDataManager: ObservableObject {
     }
 
     /// Saves an image to Core Data. Uses a background context. Takes a non-optional String key.
-    private func saveImageToCoreData(image: UIImage, forKey urlString: String) { // Expects non-optional String key
+    func saveImageToCoreData(image: UIImage, forKey urlString: String) { // Expects non-optional String key
         // Use PNG representation for potentially better quality/lossless, or JPEG for space saving
         guard let imageData = image.pngData() else { // Or image.jpegData(compressionQuality: 0.8)
             print("ImageDataManager: Failed to get PNG data for image \(urlString)")
