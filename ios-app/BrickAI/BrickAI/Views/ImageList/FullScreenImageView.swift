@@ -115,7 +115,9 @@ struct FullScreenImageView: View {
                 }
             }
             .onEnded { value in
-                let dragThreshold: CGFloat = 100                
+                let dragThreshold: CGFloat = 100
+                let velocityThreshold: CGFloat = 300
+                
                 if value.translation.height > dragThreshold || value.predictedEndTranslation.height > dragThreshold * 1.5 {
                     print("Drag ended: Dismissing view.")
                     dismiss()
