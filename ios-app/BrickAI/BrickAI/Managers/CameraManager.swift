@@ -10,6 +10,7 @@ class CameraManager: ObservableObject {
     // --- Published Properties ---
     @Published var capturedImage: UIImage? // Holds the image after capture
     @Published private(set) var isPermissionGranted: Bool = false // Camera permission state
+    @Published private(set) var currentCameraPosition: AVCaptureDevice.Position = .back
 
     // --- Private Properties ---
     private var videoDeviceInput: AVCaptureDeviceInput?
@@ -71,20 +72,41 @@ class CameraManager: ObservableObject {
              print("CameraManager: Session already configured.")
              return
         }
-        
+
         session.beginConfiguration()
         session.sessionPreset = .photo // Use high quality preset
 
-        // Find video device (prefer back camera)
-        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            print("CameraManager Error: Failed to find back camera.")
-            session.commitConfiguration()
-            return
+        // Find video device based on the current desired position (defaults to back)
+        //<-----CHANGE START------>
+        // Corrected the guard statement's else block
+        var deviceToUse: AVCaptureDevice? = nil
+        if let primaryDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: currentCameraPosition) {
+             deviceToUse = primaryDevice
+        } else {
+             print("CameraManager Error: Failed to find primary camera for position \(currentCameraPosition). Attempting fallback.")
+             let fallbackPosition: AVCaptureDevice.Position = (currentCameraPosition == .back) ? .front : .back
+             if let fallbackDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: fallbackPosition) {
+                  print("CameraManager: Using fallback camera position \(fallbackPosition)")
+                  deviceToUse = fallbackDevice
+                  currentCameraPosition = fallbackPosition // Update state if using fallback
+             } else {
+                  print("CameraManager Error: Failed to find fallback camera either.")
+                  session.commitConfiguration() // Commit before returning
+                  return // Exit scope if no device found
+             }
         }
+
+        // Ensure we actually have a device before proceeding
+        guard let videoDevice = deviceToUse else {
+             print("CameraManager Error: No suitable video device found after primary and fallback checks.")
+             session.commitConfiguration() // Commit before returning
+             return // Exit scope if device is still nil (shouldn't happen logically here but safer)
+        }
+        //<-----CHANGE END-------->
 
         // Create video input
         do {
-            videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
+             videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
         } catch {
             print("CameraManager Error: Could not create video device input: \(error)")
             session.commitConfiguration()
@@ -112,7 +134,7 @@ class CameraManager: ObservableObject {
         }
 
         session.commitConfiguration()
-        print("CameraManager: Session configured successfully.")
+        print("CameraManager: Session configured successfully for position \(currentCameraPosition).")
     }
 
     // --- Session Control ---
@@ -159,7 +181,7 @@ class CameraManager: ObservableObject {
              print("CameraManager Error: Cannot capture photo, permission denied.")
              return
          }
-        
+
          print("CameraManager: Initiating photo capture.")
          let settings = AVCapturePhotoSettings()
          // Configure settings (flash, quality, etc.) if needed
@@ -178,11 +200,11 @@ class CameraManager: ObservableObject {
               // Release the delegate reference once capture is complete
                self?.photoCaptureDelegate = nil
          }
-        
+
          // Initiate the capture
          photoOutput.capturePhoto(with: settings, delegate: photoCaptureDelegate!)
     }
-    
+
     // --- State Reset ---
     // Call this from CapturedImageView (or HomeView) to dismiss the captured image view
     func resetCaptureState() {
@@ -191,6 +213,64 @@ class CameraManager: ObservableObject {
             print("CameraManager: Capture state reset (capturedImage set to nil).")
             // Should the session restart here? Let HomeView's onChange handle it.
         }
+    }
+
+    // --- Camera Switching ---
+    func switchCamera() {
+         guard session.isRunning else {
+              print("CameraManager: Cannot switch camera, session is not running.")
+              return
+         }
+         guard let currentInput = self.videoDeviceInput else {
+              print("CameraManager: Cannot switch camera, current video input is nil.")
+              return
+         }
+
+         // Determine the desired position
+         let desiredPosition: AVCaptureDevice.Position = (currentInput.device.position == .back) ? .front : .back
+         print("CameraManager: Attempting to switch camera to \(desiredPosition).")
+
+         // Find the new device
+         guard let newDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: desiredPosition) else {
+              print("CameraManager Error: Failed to find camera for position \(desiredPosition).")
+              return
+         }
+
+         // Create new input
+         let newVideoInput: AVCaptureDeviceInput
+         do {
+              newVideoInput = try AVCaptureDeviceInput(device: newDevice)
+         } catch {
+              print("CameraManager Error: Could not create video input for \(desiredPosition): \(error)")
+              return
+         }
+
+         // Perform the switch on the session (needs configuration block)
+         session.beginConfiguration()
+
+         // Remove the old input
+         session.removeInput(currentInput)
+
+         // Add the new input
+         if session.canAddInput(newVideoInput) {
+              session.addInput(newVideoInput)
+              self.videoDeviceInput = newVideoInput // Update the stored input reference
+              // Update the published state on the main thread
+              DispatchQueue.main.async {
+                   self.currentCameraPosition = desiredPosition
+              }
+              print("CameraManager: Successfully switched camera to \(desiredPosition).")
+         } else {
+              print("CameraManager Error: Could not add new video input for \(desiredPosition). Re-adding old input.")
+              // Attempt to re-add the old input if adding the new one failed
+              if session.canAddInput(currentInput) {
+                   session.addInput(currentInput)
+              }
+              // Don't update state if switch failed
+         }
+
+         // Commit the configuration changes
+         session.commitConfiguration()
     }
 }
 
@@ -227,12 +307,12 @@ class PhotoCaptureProcessor: NSObject, AVCapturePhotoCaptureDelegate {
              completionHandler(nil)
              return
         }
-        
+
         print("PhotoCaptureProcessor: Successfully processed photo into UIImage.")
         // Call the completion handler with the successful image
         completionHandler(capturedImage)
     }
-    
+
      // You might implement other delegate methods if needed (e.g., willBeginCapture, didFinishCapture)
      func photoOutput(_ output: AVCapturePhotoOutput, willBeginCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
          print("PhotoCaptureProcessor: willBeginCapture...")

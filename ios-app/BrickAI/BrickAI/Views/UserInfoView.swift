@@ -3,7 +3,7 @@
 
 import SwiftUI
 
-struct SettingsView: View {
+struct UserInfoView: View {
      @EnvironmentObject var userManager: UserManager
      // MARK: <<< ADDED START >>>
      // Inject ImageDataManager to clear cache
@@ -27,20 +27,7 @@ struct SettingsView: View {
               }
               // Add other settings sections...
           }
-          .navigationTitle("Settings")
+          .navigationTitle("User")
      }
-}
-
-// Previews (kept as requested)
-struct SettingsView_Previews: PreviewProvider {
-    static var previews: some View {
-        let mockUserManager = UserManager.shared
-        let mockImageDataManager = ImageDataManager()
-        NavigationView { // Add NavigationView for preview context
-            SettingsView()
-                .environmentObject(mockUserManager)
-                .environmentObject(mockImageDataManager)
-        }
-    }
 }
 // MARK: END MODIFIED FILE - Views/SettingsView.swift

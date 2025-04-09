@@ -31,11 +31,6 @@ struct ImageListView: View {
                         // .environmentObject(userManager) // Only if needed by ImageListContentView/ImageRow
                 }
             }
-            // MARK: <<< MODIFIED START >>>
-            // Removed Nav Title and Toolbar from here - they are now in ImageListContentView
-            // .navigationTitle("My Images") // MOVED
-            // .toolbar { ... } // MOVED
-            // MARK: <<< MODIFIED END >>>
 
         } // End NavigationView
         // --- Error Handling Alert & onChange remain attached to NavigationView ---
@@ -59,10 +54,8 @@ struct ImageListView: View {
                  Button("OK", role: .cancel) { }
             }
         } message: { error in
-            Text(error.localizedDescription ?? "An unknown error occurred.")
+            Text(error.localizedDescription)
         }
-        // --- End Error Handling Alert & onChange ---
-        // Previews (kept as requested)
     }
 }
 
