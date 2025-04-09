@@ -9,9 +9,7 @@ struct ImageListContentView: View {
     @EnvironmentObject var imageDataManager: ImageDataManager
 
     var body: some View {
-        // Apply overlay using the extracted view
         List {
-            // Iterate over images from the manager
             ForEach(imageDataManager.images) { image in
                  NavigationLink(destination: ImageDetailView(image: image)) {
                       ImageRow(image: image)
@@ -25,18 +23,6 @@ struct ImageListContentView: View {
              imageDataManager.prepareImageData()
          }
         // Moved Nav Title and Toolbar here
-        .navigationTitle("My Images")
-        .toolbar {
-             ToolbarItem(placement: .navigationBarTrailing) {
-                 Button {
-                      // Manual refresh button triggers fetch in manager
-                      imageDataManager.prepareImageData()
-                 } label: {
-                      Image(systemName: "arrow.clockwise")
-                 }
-                 // Disable refresh button only while list is actively loading
-                 .disabled(imageDataManager.isLoadingList)
-             }
-        }
+        .navigationTitle("Images")
     }
 }

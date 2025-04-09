@@ -1,15 +1,20 @@
+// MARK: MODIFIED FILE - Views/CapturedImageView.swift
+// File: BrickAI/Views/CapturedImageView.swift
+// Modified upload action to be asynchronous and immediately dismiss the view.
+
 import SwiftUI
 
 struct CapturedImageView: View {
     let image: UIImage // The captured image to display/upload
     // Access the shared CameraManager instance to reset state
     @StateObject private var cameraManager = CameraManager.shared
-    // We no longer need EnvironmentObject for UserManager just to pass the token
 
-    // State variables for managing the upload process and UI feedback
-    @State private var isUploading = false
-    @State private var uploadError: String? = nil
-    @State private var uploadSuccessURL: String? = nil // Store returned URL on success
+    //<-----CHANGE START------>
+    // State variables for upload progress/status are no longer needed in this view
+    // @State private var isUploading = false // REMOVED
+    // @State private var uploadError: String? = nil // REMOVED
+    // @State private var uploadSuccessURL: String? = nil // REMOVED
+    //<-----CHANGE END-------->
 
     var body: some View {
         ZStack {
@@ -22,15 +27,13 @@ struct CapturedImageView: View {
                 .aspectRatio(contentMode: .fit)
                 .ignoresSafeArea()
 
-            // Overlays for controls and status messages
+            // Overlays for controls
             VStack {
                  // Top row with Cancel ('X') button
                  HStack {
                      Button(action: {
-                          // Allow cancelling only if not currently uploading
-                          if !isUploading {
-                               cameraManager.resetCaptureState() // Dismiss this view by resetting state
-                          }
+                          // Allow cancelling
+                          cameraManager.resetCaptureState() // Dismiss this view by resetting state
                      }) {
                          Image(systemName: "xmark.circle.fill")
                              .font(.title)
@@ -38,134 +41,110 @@ struct CapturedImageView: View {
                              .foregroundColor(.white)
                              .shadow(radius: 3)
                      }
-                     .disabled(isUploading) // Disable cancel button during upload
-                     .padding() // Add padding around the button
-                     Spacer() // Push button to the left
+                     .padding()
+                     Spacer()
                  }
 
                  Spacer() // Pushes bottom controls down
 
                  // Bottom row with Confirm (Checkmark) button
                  HStack(spacing: 60) {
-                     Spacer() // Center the button horizontally
+                     Spacer()
                      Button(action: {
-                         // --- Trigger Upload Action ---
-                         // Set UI state to indicate uploading
-                         self.isUploading = true
-                         self.uploadError = nil    // Clear previous errors
-                         self.uploadSuccessURL = nil // Clear previous success
+                         //<-----CHANGE START------>
+                         // 1. Immediately dismiss the view / reset camera state
+                         print("CapturedImageView: Confirm tapped. Dismissing view immediately.")
+                         cameraManager.resetCaptureState()
 
-                         print("CapturedImageView: Upload button tapped. Initiating upload via NetworkManager.")
-                         // Call NetworkManager's uploadImage function.
-                         // It now retrieves the token internally from UserManager/Keychain.
-                         NetworkManager.uploadImage(self.image) { result in
-                             // This completion handler runs on the main thread (handled by NetworkManager)
-                             self.isUploading = false // Upload finished, update UI state
+                         // 2. Launch the upload in a background Task
+                         print("CapturedImageView: Launching upload task in background.")
+                         Task(priority: .background) {
+                             // Keep a copy of the image data for the background task
+                             let imageToUpload = self.image
 
-                             switch result {
-                             case .success(let urlString):
-                                 // --- Handle Successful Upload ---
-                                 print("CapturedImageView: Upload Successful! URL: \(urlString)")
-                                 self.uploadSuccessURL = urlString // Store success URL for potential display
+                             // Call NetworkManager's uploadImage function.
+                             // The completion handler will run later, but we don't act on it here.
+                             NetworkManager.uploadImage(imageToUpload) { result in
+                                 // This completion handler still runs on the main thread when the upload finishes
+                                 switch result {
+                                 case .success(let urlString):
+                                     // Upload finished successfully in the background
+                                     print("CapturedImageView (Background Task): Upload Successful! URL: \(urlString)")
+                                     // Optional: Could trigger a notification or update a global state/badge later
+                                     // Optional: Could trigger ImageDataManager to refresh list data
+                                     // Task { await ImageDataManager.shared.prepareImageData() } // Example refresh
 
-                                 // Provide brief success feedback then dismiss the view
-                                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                     // Check if we are still showing success before dismissing,
-                                     // in case user cancelled quickly after success started showing.
-                                     if self.uploadSuccessURL == urlString {
-                                          cameraManager.resetCaptureState() // Dismiss view
+                                 case .failure(let error):
+                                     // Upload failed in the background
+                                     print("CapturedImageView (Background Task): Upload Failed: \(error.localizedDescription)")
+                                     // Optional: Log error, potentially notify user via a different mechanism if needed
+                                     if case .authenticationTokenMissing = error {
+                                          print("CapturedImageView (Background Task): Handling authenticationTokenMissing error.")
+                                     } else if case .unauthorized = error {
+                                          print("CapturedImageView (Background Task): Handling unauthorized error (session expired?).")
                                      }
                                  }
-
-                             case .failure(let error):
-                                 // --- Handle Failed Upload ---
-                                 print("CapturedImageView: Upload Failed: \(error.localizedDescription)")
-                                 // Display the localized error description from the NetworkError enum
-                                 self.uploadError = error.localizedDescription
-
-                                 // Optionally, handle specific errors differently
-                                 if case .authenticationTokenMissing = error {
-                                      // Suggest user needs to re-login
-                                      print("CapturedImageView: Handling authenticationTokenMissing error.")
-                                      // Could trigger logout: UserManager.shared.clearUser()
-                                 } else if case .unauthorized = error {
-                                      // Suggest session expired
-                                      print("CapturedImageView: Handling unauthorized error.")
-                                 }
-                                 // Other errors (.networkRequestFailed, .serverError, etc.) are displayed generically
                              }
                          }
-                         // --- End Trigger Upload Action ---
+                         // --- End launching background task ---
+                         //<-----CHANGE END-------->
                      }) {
-                         // Button content changes based on upload state
+                         //<-----CHANGE START------>
+                         // Button content is now static - always show checkmark as we dismiss immediately
+                         Image(systemName: "checkmark.circle.fill")
+                             .font(.system(size: 64))
+                             .foregroundColor(.white)
+                             .shadow(radius: 3)
+                         // Removed ProgressView logic:
+                         /*
                          if isUploading {
-                             ProgressView() // Show spinner during upload
+                             ProgressView()
                                  .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                 .scaleEffect(2.0) // Make spinner larger
-                         } else {
-                             Image(systemName: "checkmark.circle.fill") // Show checkmark icon
-                                 .font(.system(size: 64))
-                                 .foregroundColor(.white)
-                                 .shadow(radius: 3)
-                         }
+                                 .scaleEffect(2.0)
+                         } else { ... }
+                         */
+                         //<-----CHANGE END-------->
                      }
-                     .disabled(isUploading) // Disable button while uploading
-                     Spacer() // Center the button horizontally
+                     //<-----CHANGE START------>
+                     // Button is never disabled as action is now instantaneous
+                     // .disabled(isUploading) // REMOVED
+                     //<-----CHANGE END-------->
+                     Spacer()
                  }
-                 .padding(.bottom, 30) // Space from bottom edge
-                 
-                 // --- Status Message Area ---
-                 // Display error or success message dynamically
-                 Group { // Group allows applying modifiers to conditional content
-                      if let errorMsg = uploadError {
-                          Text(errorMsg)
-                              .foregroundColor(.red)
-                              .padding(.horizontal)
-                              .padding(.vertical, 8)
-                              .background(Color.black.opacity(0.75))
-                              .cornerRadius(8)
-                              .transition(.opacity) // Fade in/out
-                              // Optional: Allow tapping error to dismiss it
-                              .onTapGesture { self.uploadError = nil }
+                 .padding(.bottom, 30)
 
-                      } else if let successURL = uploadSuccessURL {
-                          // Display success briefly (handled by dismiss timer mostly)
-                           Text("Upload successful!")
-                               .foregroundColor(.green)
-                               .padding(.horizontal)
-                               .padding(.vertical, 8)
-                               .background(Color.black.opacity(0.75))
-                               .cornerRadius(8)
-                               .transition(.opacity) // Fade in/out
-                      }
-                 }
-                 .padding(.bottom, 10) // Space below messages
-                 // --- End Status Message Area ---
+                 //<-----CHANGE START------>
+                 // Removed Status Message Area - View dismisses before showing status
+                 /*
+                 Group { ... }
+                 .padding(.bottom, 10)
+                 */
+                 //<-----CHANGE END-------->
 
             } // End VStack for overlays
-             // Apply animations to changes in state variables for smoother UI transitions
-             .animation(.easeInOut, value: uploadError)
-             .animation(.easeInOut, value: uploadSuccessURL)
-             .animation(.easeInOut, value: isUploading)
+             //<-----CHANGE START------>
+             // Removed animations tied to upload state variables
+             // .animation(.easeInOut, value: uploadError)
+             // .animation(.easeInOut, value: uploadSuccessURL)
+             // .animation(.easeInOut, value: isUploading)
+             //<-----CHANGE END-------->
 
         } // End ZStack (main container)
          .onAppear {
-              // Ensure status messages are cleared when the view initially appears
-              print("CapturedImageView: Appeared. Clearing status messages.")
-              uploadError = nil
-              uploadSuccessURL = nil
+              // Ensure status messages were cleared (though they are removed now)
+              print("CapturedImageView: Appeared.")
+              // uploadError = nil // No longer exists
+              // uploadSuccessURL = nil // No longer exists
          }
     }
 }
 
-// Previews might require providing a sample image and environment objects if needed
+// Previews might require providing a sample image
 struct CapturedImageView_Previews: PreviewProvider {
      static var previews: some View {
-         // Create a placeholder UIImage for the preview
          let placeholderImage = UIImage(systemName: "photo") ?? UIImage()
           CapturedImageView(image: placeholderImage)
-              // Inject necessary environment objects or use mock managers for preview
-              // .environmentObject(UserManager.shared) // No longer needed for token
-              // .environmentObject(CameraManager.shared) // Already using @StateObject
      }
 }
+
+// MARK: END MODIFIED FILE - Views/CapturedImageView.swift

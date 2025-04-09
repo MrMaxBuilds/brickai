@@ -73,13 +73,6 @@ struct ImageRow: View {
                 Text("Status: \(image.status.capitalized)")
                     .font(.headline)
                     .foregroundColor(statusColor(status: image.status))
-                if let prompt = image.prompt, !prompt.isEmpty {
-                     Text(prompt) // Removed "Prompt:" prefix for cleaner look
-                         .font(.subheadline)
-                         .foregroundColor(.secondary)
-                         .lineLimit(1)
-                         .truncationMode(.tail) // Ensure truncation is clear
-                }
                  // Convert Date to String using formatted API for relative style
                  Text(image.createdAt, style: .relative)
                     .font(.caption)
