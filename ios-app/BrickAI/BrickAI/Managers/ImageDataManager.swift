@@ -2,10 +2,20 @@
 // File: BrickAI/Managers/ImageDataManager.swift
 // Manages fetching the image list and preloading/caching image data.
 // Updated prepareImageData to avoid clearing images prematurely during refresh.
+// Replaced NSCache with Core Data for persistent image caching.
 
 import Foundation
 import SwiftUI // For UIImage and ObservableObject
 import Combine // For ObservableObject
+//<-----CHANGE START------>
+import CoreData // Import Core Data
+//<-----CHANGE END-------->
+
+
+//<-----CHANGE START------>
+// Define the Core Data Entity Name
+let coreDataEntityName = "CachedImageEntity"
+//<-----CHANGE END-------->
 
 @MainActor // Ensures @Published properties are updated on the main thread
 class ImageDataManager: ObservableObject {
@@ -19,66 +29,81 @@ class ImageDataManager: ObservableObject {
     @Published var isPreloading: Bool = false
 
     // --- Caching ---
-    private let imageCache = NSCache<NSURL, UIImage>()
+    //<-----CHANGE START------>
+    // Removed NSCache
+    // private let imageCache = NSCache<NSURL, UIImage>()
+
+    // Core Data Persistent Container
+    lazy var persistentContainer: NSPersistentContainer = {
+        let container = NSPersistentContainer(name: "BrickAI") // Use your Core Data Model name here
+        container.loadPersistentStores(completionHandler: { (storeDescription, error) in
+            if let error = error as NSError? {
+                // Replace this implementation with code to handle the error appropriately.
+                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
+                fatalError("Unresolved error \(error), \(error.userInfo)") // Consider non-fatal error handling
+            } else {
+                 print("ImageDataManager: Core Data store loaded: \(storeDescription.url?.absoluteString ?? "No URL")")
+                 // Ensure the context automatically merges changes saved by background contexts
+                 container.viewContext.automaticallyMergesChangesFromParent = true
+            }
+        })
+        return container
+    }()
+
+    // Convenience accessor for the main context
+    private var viewContext: NSManagedObjectContext {
+        return persistentContainer.viewContext
+    }
+    //<-----CHANGE END-------->
+
     private let imagePreloadLimit = 20 // Configurable limit for preloading
 
     // --- Internal State ---
     private var fetchTask: Task<Void, Never>? = nil
     private var preloadTask: Task<Void, Never>? = nil
-    private var activeDownloads = Set<URL>() // Track URLs currently being downloaded
+    //<-----CHANGE START------>
+    // Track URLs currently being downloaded (using String representation for Core Data compatibility)
+    private var activeDownloads = Set<String>()
+    //<-----CHANGE END-------->
 
     init() {
         print("ImageDataManager: Initialized.")
-        // Configure cache limits if needed (defaults are usually okay)
-        // imageCache.countLimit = 50 // Example: Max 50 images in cache
-        // imageCache.totalCostLimit = 1024 * 1024 * 100 // Example: Max 100MB cache size
+        //<-----CHANGE START------>
+        // Core Data setup happens lazily via persistentContainer access.
+        // Optionally, clean up old cache items on init? (e.g., items older than X days)
+        // cleanupOldCacheItems()
+        //<-----CHANGE END-------->
     }
 
     // --- Public Methods ---
 
     /// Called after login or for refresh to fetch the image list and then preload images.
     func prepareImageData() {
-        // Cancel existing tasks to avoid redundant work if called multiple times
-        // Keep previous fetchTask cancellation, but potentially allow preload to continue?
-        // For simplicity/safety, let's still cancel previous preload on a new list fetch request.
         fetchTask?.cancel()
         preloadTask?.cancel()
-        // Don't clear activeDownloads here if we want downloads for older list items potentially completing?
-        // Let's keep it cleared for now to ensure preload focuses on the *new* list's priority items.
         activeDownloads.removeAll()
-        isPreloading = false // Reset preloading state indicators
+        isPreloading = false
         preloadingProgress = 0.0
 
         print("ImageDataManager: prepareImageData() called. Starting fetch task.")
 
-        // MARK: <<< MODIFIED START >>>
-        // Reset only error and loading state, keep existing images for smoother refresh
-        // self.images = [] // REMOVED - Avoid clearing images here
         self.listError = nil
         self.isLoadingList = true
-        // MARK: <<< MODIFIED END >>>
 
         fetchTask = Task {
             do {
-                // Use await for the Result-based fetchImages
                 let fetchedImages = try await fetchImagesWithAsyncAwait()
 
-                // Check if task was cancelled before updating state
                 guard !Task.isCancelled else {
                     print("ImageDataManager: Fetch task cancelled before updating images.")
-                    isLoadingList = false // Still need to turn off loading indicator
+                    isLoadingList = false
                     return
                 }
 
                 print("ImageDataManager: Successfully fetched \(fetchedImages.count) images.")
-                // MARK: <<< MODIFIED START >>>
-                // Update the images array only *after* successful fetch
                 self.images = fetchedImages
-                // Error is already nil from start of function
-                // MARK: <<< MODIFIED END >>>
-                self.isLoadingList = false // Finished loading list
+                self.isLoadingList = false
 
-                // Start preloading *after* list is successfully fetched and updated
                 triggerImagePreloading()
 
             } catch let error as NetworkError {
@@ -88,10 +113,6 @@ class ImageDataManager: ObservableObject {
                     return
                 }
                 print("ImageDataManager: Error fetching images: \(error.localizedDescription ?? "Unknown error")")
-                // MARK: <<< MODIFIED START >>>
-                // Don't clear images on error during refresh, keep stale data showing
-                // self.images = [] // REMOVED
-                // MARK: <<< MODIFIED END >>>
                 self.listError = error
                 self.isLoadingList = false
             } catch {
@@ -101,44 +122,66 @@ class ImageDataManager: ObservableObject {
                     return
                 }
                 print("ImageDataManager: Unknown error during image fetch: \(error)")
-                // MARK: <<< MODIFIED START >>>
-                // Don't clear images on error during refresh
-                // self.images = [] // REMOVED
-                // MARK: <<< MODIFIED END >>>
-                self.listError = .unexpectedResponse // Or a more generic error
+                self.listError = .unexpectedResponse
                 self.isLoadingList = false
             }
         }
     }
 
-    /// Retrieves an image from the cache. Returns nil if not cached.
+    /// Retrieves an image from the Core Data cache. Returns nil if not cached.
     func getImage(for url: URL?) -> UIImage? {
-        guard let url = url else { return nil }
-        return imageCache.object(forKey: url as NSURL)
+        guard let urlString = url?.absoluteString else { return nil }
+
+        //<-----CHANGE START------>
+        // Fetch from Core Data
+        let request = NSFetchRequest<CachedImageEntity>(entityName: coreDataEntityName)
+        request.predicate = NSPredicate(format: "url == %@", urlString)
+        request.fetchLimit = 1
+
+        do {
+            let results = try viewContext.fetch(request)
+            if let cachedEntity = results.first, let imageData = cachedEntity.imageData {
+                 // print("ImageDataManager: Cache hit for \(urlString.suffix(20)) from Core Data.")
+                 return UIImage(data: imageData)
+            } else {
+                 // print("ImageDataManager: Cache miss for \(urlString.suffix(20)) in Core Data.")
+                 return nil
+            }
+        } catch {
+            print("ImageDataManager: Error fetching cached image from Core Data for \(urlString): \(error)")
+            return nil
+        }
+        //<-----CHANGE END-------->
     }
 
     /// Attempts to download and cache an image if not already cached or downloading.
-    /// Useful for explicitly loading an image that wasn't in the top `imagePreloadLimit`.
     func ensureImageIsCached(for url: URL?) {
-        guard let url = url else { return }
-        // Check cache first
+        guard let url = url, let urlString = url.absoluteString else { return }
+
+        // Check cache first (using the new Core Data method)
         if getImage(for: url) != nil { return }
-        // Check if already downloading (part of preload or another explicit request)
-        guard !activeDownloads.contains(url) else { return }
 
-        print("ImageDataManager: Explicitly caching image for URL: \(url.lastPathComponent)")
-        activeDownloads.insert(url)
+        //<-----CHANGE START------>
+        // Check if already downloading (using String URL)
+        guard !activeDownloads.contains(urlString) else { return }
 
-        Task(priority: .background) { // Lower priority for explicit requests?
+        print("ImageDataManager: Explicitly caching image for URL: \(urlString)")
+        activeDownloads.insert(urlString) // Use String URL
+        //<-----CHANGE END-------->
+
+        Task(priority: .background) {
+            //<-----CHANGE START------>
             defer {
                 // Ensure we remove from activeDownloads even if download fails
-                // Use Task to hop back to main actor for safe mutation
-                Task { @MainActor in self.activeDownloads.remove(url) }
+                Task { @MainActor in self.activeDownloads.remove(urlString) } // Use String URL
             }
+            //<-----CHANGE END-------->
             if let image = await downloadImage(url: url) {
-                 // Add to cache (thread safe)
-                self.imageCache.setObject(image, forKey: url as NSURL)
-                print("ImageDataManager: Successfully cached explicit request: \(url.lastPathComponent)")
+                 //<-----CHANGE START------>
+                 // Save downloaded image to Core Data
+                 saveImageToCoreData(image: image, forKey: urlString)
+                 print("ImageDataManager: Successfully cached explicit request: \(urlString)")
+                 //<-----CHANGE END-------->
             }
             // No need to update progress for explicit caching
         }
@@ -163,92 +206,80 @@ class ImageDataManager: ObservableObject {
 
     /// Initiates the background task to preload images.
     private func triggerImagePreloading() {
-        preloadTask?.cancel() // Cancel any previous preload task
-        activeDownloads.removeAll() // Clear active downloads for the new preload cycle
-        isPreloading = true // Indicate preloading has started
-        preloadingProgress = 0.0 // Reset progress
+        preloadTask?.cancel()
+        activeDownloads.removeAll()
+        isPreloading = true
+        preloadingProgress = 0.0
 
-        // Get the list of images to preload based on the latest fetched data
         let imagesToPreload = Array(images.prefix(imagePreloadLimit))
         guard !imagesToPreload.isEmpty else {
             print("ImageDataManager: No images to preload.")
-            isPreloading = false // Nothing to preload
+            isPreloading = false
             return
         }
         let totalToPreload = imagesToPreload.count
-        var successfullyPreloadedCount = 0 // Track successful downloads *in this cycle*
+        var successfullyPreloadedCount = 0
 
         print("ImageDataManager: Starting preload task for up to \(totalToPreload) images.")
 
-        preloadTask = Task(priority: .background) { // Run preloading in background
+        preloadTask = Task(priority: .background) {
             for imageData in imagesToPreload {
-                 // Check for cancellation before each potential download
                 guard !Task.isCancelled else {
                     print("ImageDataManager: Preload task cancelled.")
-                    break // Exit the loop
+                    break
                 }
 
-                // Prefer processed, fallback to original
-                guard let url = imageData.processedImageUrl ?? imageData.originalImageUrl else {
-                    continue // Skip if no valid URL for this item
-                }
+                guard let url = imageData.processedImageUrl ?? imageData.originalImageUrl else { continue }
+                //<-----CHANGE START------>
+                let urlString = url.absoluteString // Use String for checks
+                //<-----CHANGE END-------->
 
-                // Skip if already cached (This is the key part for refresh logic)
+                // Skip if already cached (checks Core Data now)
                 if getImage(for: url) != nil {
-                    print("ImageDataManager: Preload skipping already cached: \(url.lastPathComponent)")
-                    // Don't increment successfullyPreloadedCount here, as we didn't download it *now*
-                    // Only count actual downloads within this task towards progress? Or count skips too?
-                    // Let's adjust progress based on iteration / total items targeted for check.
-                    // Alternative: base progress on actual downloads initiated/completed.
-                    // Let's keep simple progress: items processed / total items to check.
-                    // successfullyPreloadedCount += 1 // If counting skips as progress
-                    // updatePreloadProgress(current: successfullyPreloadedCount, total: totalToPreload)
-                    continue // Move to the next image
+                    print("ImageDataManager: Preload skipping already cached: \(urlString)")
+                    continue
                 }
 
-                // Skip if already downloading (shouldn't happen if activeDownloads was cleared, but check anyway)
-                guard !activeDownloads.contains(url) else { continue }
+                //<-----CHANGE START------>
+                // Skip if already downloading (using String URL)
+                guard !activeDownloads.contains(urlString) else { continue }
+                activeDownloads.insert(urlString) // Mark as downloading *before* starting await
+                //<-----CHANGE END-------->
 
-                activeDownloads.insert(url) // Mark as downloading *before* starting await
                 if let image = await downloadImage(url: url) {
-                     // Check for cancellation *after* download but *before* caching
                     guard !Task.isCancelled else {
-                         print("ImageDataManager: Preload task cancelled after download, before caching \(url.lastPathComponent).")
+                         print("ImageDataManager: Preload task cancelled after download, before caching \(urlString).")
                          break
                     }
-                    // Add to cache (NSCache is thread safe)
-                    imageCache.setObject(image, forKey: url as NSURL)
-                    print("ImageDataManager: Preloaded and cached: \(url.lastPathComponent)")
-                    successfullyPreloadedCount += 1 // Count successful downloads
+                    //<-----CHANGE START------>
+                    // Save to Core Data
+                    saveImageToCoreData(image: image, forKey: urlString)
+                    print("ImageDataManager: Preloaded and cached: \(urlString)")
+                    //<-----CHANGE END-------->
+                    successfullyPreloadedCount += 1
                 } else {
-                    // Download failed (error already logged by downloadImage)
-                    print("ImageDataManager: Preload failed for: \(url.lastPathComponent)")
-                    // Don't increment success count on failure
+                    print("ImageDataManager: Preload failed for: \(urlString)")
                 }
-                 // Remove from active downloads set after attempt finishes
-                 // Use Task @MainActor to safely modify activeDownloads
-                Task { @MainActor in activeDownloads.remove(url) }
 
+                //<-----CHANGE START------>
+                // Remove from active downloads set after attempt finishes (using String URL)
+                Task { @MainActor in activeDownloads.remove(urlString) }
+                //<-----CHANGE END-------->
 
-                // Check for cancellation before updating progress
                 guard !Task.isCancelled else {
                      print("ImageDataManager: Preload task cancelled before progress update.")
                      break
                 }
-                 // Update progress on main thread based on successful downloads
                 updatePreloadProgress(current: successfullyPreloadedCount, total: totalToPreload)
 
             } // End loop
 
-             // Final state update after loop finishes or breaks
             Task { @MainActor in
-                 // Calculate final progress based on successful downloads vs total targeted (could be < 1.0 if some failed/skipped)
                  let finalProgress = totalToPreload > 0 ? Double(successfullyPreloadedCount) / Double(totalToPreload) : 1.0
                  print("ImageDataManager: Preload task finished. Successfully downloaded \(successfullyPreloadedCount)/\(totalToPreload) target images. Final Progress: \(finalProgress)")
-                 self.isPreloading = false // Mark preloading as complete
-                 self.preloadingProgress = finalProgress // Set final progress
-                 // self.preloadingProgress = 1.0 // Alternative: Always set to 1.0 on completion
-                 self.activeDownloads.removeAll() // Ensure clear at the very end
+                 self.isPreloading = false
+                 self.preloadingProgress = finalProgress
+                 self.activeDownloads.removeAll()
             }
         }
     }
@@ -256,9 +287,7 @@ class ImageDataManager: ObservableObject {
     /// Downloads a single image from a URL.
     private func downloadImage(url: URL) async -> UIImage? {
         do {
-            // Use default URLSession; configure cache policy if needed
-            // Consider .reloadIgnoringLocalCacheData if backend images might update under same URL? Unlikely for S3.
-            let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad) // Standard policy
+            let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
             let (data, response) = try await URLSession.shared.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
@@ -272,7 +301,6 @@ class ImageDataManager: ObservableObject {
             }
             return image
         } catch {
-             // Handle cancellation error specifically
             if (error as? URLError)?.code == .cancelled {
                  print("ImageDataManager: Download cancelled for \(url.lastPathComponent).")
             } else {
@@ -285,19 +313,91 @@ class ImageDataManager: ObservableObject {
     /// Updates the preloading progress (ensures it runs on main thread).
     private func updatePreloadProgress(current: Int, total: Int) {
         guard total > 0 else { return }
-        // Calculate progress based on successful downloads vs total items targeted
         let progress = Double(current) / Double(total)
         self.preloadingProgress = progress
-        // print("ImageDataManager: Preload progress: \(progress * 100)%") // Optional verbose log
     }
 
-    // Optional: Method to clear cache if needed (e.g., on logout)
-    func clearCache() {
-        imageCache.removeAllObjects()
-        activeDownloads.removeAll() // Cancel any in-flight downloads associated with cache
-        isPreloading = false
-        preloadTask?.cancel() // Cancel the preload task itself
-        print("ImageDataManager: Image cache cleared.")
+    //<-----CHANGE START------>
+    /// Saves an image to Core Data. Uses a background context.
+    private func saveImageToCoreData(image: UIImage, forKey urlString: String) {
+        // Use PNG representation for potentially better quality/lossless, or JPEG for space saving
+        guard let imageData = image.pngData() else { // Or image.jpegData(compressionQuality: 0.8)
+            print("ImageDataManager: Failed to get PNG data for image \(urlString)")
+            return
+        }
+
+        // Perform Core Data operations on a background context
+        let context = persistentContainer.newBackgroundContext()
+        context.perform { // Use perform to ensure operations are on the context's queue
+            let request = NSFetchRequest<CachedImageEntity>(entityName: coreDataEntityName)
+            request.predicate = NSPredicate(format: "url == %@", urlString)
+            request.fetchLimit = 1
+
+            do {
+                let results = try context.fetch(request)
+                let entity: CachedImageEntity
+                if let existingEntity = results.first {
+                    // Update existing entity
+                     entity = existingEntity
+                     print("ImageDataManager: Updating existing Core Data cache entry for \(urlString)")
+                } else {
+                    // Create new entity
+                     entity = CachedImageEntity(context: context)
+                     entity.url = urlString
+                     print("ImageDataManager: Creating new Core Data cache entry for \(urlString)")
+                }
+                entity.imageData = imageData
+                entity.lastAccessed = Date() // Optional: Track last access time
+
+                try context.save()
+                 print("ImageDataManager: Saved image to Core Data context for \(urlString).")
+                 // viewContext will automatically merge these changes if configured correctly.
+
+            } catch {
+                print("ImageDataManager: Failed to save image to Core Data for key \(urlString): \(error)")
+                 // Rollback changes if save fails? Context might be in inconsistent state.
+                 context.rollback()
+            }
+        }
     }
+    //<-----CHANGE END-------->
+
+
+    //<-----CHANGE START------>
+    /// Clears the entire Core Data image cache.
+    func clearCache() {
+        // Cancel any ongoing downloads/preloading
+        activeDownloads.removeAll()
+        preloadTask?.cancel()
+        isPreloading = false
+
+        // Perform delete on a background context
+        let context = persistentContainer.newBackgroundContext()
+        context.perform {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: coreDataEntityName)
+            let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+            batchDeleteRequest.resultType = .resultTypeObjectIDs // Optional: get IDs of deleted objects
+
+            do {
+                let result = try context.execute(batchDeleteRequest) as? NSBatchDeleteResult
+                 // Optional: Merge changes back to viewContext if needed immediately, though usually not required for delete-all
+                 if let objectIDs = result?.result as? [NSManagedObjectID], !objectIDs.isEmpty {
+                      print("ImageDataManager: Batch deleted \(objectIDs.count) items from Core Data.")
+                      // Ensure view context reflects the deletion
+                      let changes = [NSDeletedObjectsKey: objectIDs]
+                      NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [self.viewContext])
+                 } else {
+                      print("ImageDataManager: Core Data image cache cleared (batch delete executed, 0 items deleted or IDs not returned).")
+                 }
+                try context.save() // Save the context after executing batch delete
+            } catch {
+                print("ImageDataManager: Failed to clear Core Data image cache: \(error)")
+                context.rollback()
+            }
+        }
+    }
+    // Optional: Add a method to prune old cache items based on date or count limit
+    // func cleanupOldCacheItems(maxAge: TimeInterval = 7 * 24 * 60 * 60, maxSize: Int = 100) { ... }
+    //<-----CHANGE END-------->
 }
 // MARK: END MODIFIED FILE - Managers/ImageDataManager.swift

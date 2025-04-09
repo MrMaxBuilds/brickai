@@ -6,7 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		5A5FF7D92DA61A0200013CB7 /* BrickAI.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 5A5FF7D72DA61A0200013CB7 /* BrickAI.xcdatamodeld */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		5A5FF7D82DA61A0200013CB7 /* BrickAI.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = BrickAI.xcdatamodel; sourceTree = "<group>"; };
 		5AB8B3DD2DA1D48B00CED9FA /* BrickAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BrickAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -45,6 +50,7 @@
 		5AB8B3D42DA1D48B00CED9FA = {
 			isa = PBXGroup;
 			children = (
+				5A5FF7D72DA61A0200013CB7 /* BrickAI.xcdatamodeld */,
 				5AB8B3DF2DA1D48B00CED9FA /* BrickAI */,
 				5AB8B3DE2DA1D48B00CED9FA /* Products */,
 			);
@@ -132,6 +138,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A5FF7D92DA61A0200013CB7 /* BrickAI.xcdatamodeld in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -343,6 +350,19 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCVersionGroup section */
+		5A5FF7D72DA61A0200013CB7 /* BrickAI.xcdatamodeld */ = {
+			isa = XCVersionGroup;
+			children = (
+				5A5FF7D82DA61A0200013CB7 /* BrickAI.xcdatamodel */,
+			);
+			currentVersion = 5A5FF7D82DA61A0200013CB7 /* BrickAI.xcdatamodel */;
+			path = BrickAI.xcdatamodeld;
+			sourceTree = "<group>";
+			versionGroupType = wrapper.xcdatamodel;
+		};
+/* End XCVersionGroup section */
 	};
 	rootObject = 5AB8B3D52DA1D48B00CED9FA /* Project object */;
 }
