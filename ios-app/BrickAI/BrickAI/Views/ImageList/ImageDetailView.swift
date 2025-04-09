@@ -1,6 +1,7 @@
 // MARK: MODIFIED FILE - Views/ImageDetailView.swift
 // File: BrickAI/Views/ImageDetailView.swift
 // Moved download button below image, aligned with Status text.
+// Added tap gesture on image to show FullScreenImageView.
 
 import SwiftUI
 
@@ -15,15 +16,15 @@ struct ImageDetailView: View {
     @State private var showSaveAlert = false
     @State private var saveAlertTitle = ""
     @State private var saveAlertMessage = ""
+    
+    // <<< Added State Variable >>>
+    @State private var isShowingFullScreenImage = false
 
     var body: some View {
+        let imageUrl = image.processedImageUrl ?? image.originalImageUrl
+        let cachedImage = imageDataManager.getImage(for: imageUrl)
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) { // Align VStack leading for text
-
-                // --- Image Display (No changes here) ---
-                let imageUrl = image.processedImageUrl ?? image.originalImageUrl
-                let cachedImage = imageDataManager.getImage(for: imageUrl)
-
+            VStack(alignment: .leading, spacing: 20) { // Align VStack leading fufor text
                 Group {
                     if let loadedImage = cachedImage {
                         Image(uiImage: loadedImage)
@@ -45,10 +46,13 @@ struct ImageDetailView: View {
                 .cornerRadius(10)
                 .shadow(radius: 5)
                 .padding(.horizontal) // Horizontal padding for the image block
+                // <<< Added Tap Gesture >>>
+                .onTapGesture {
+                    isShowingFullScreenImage = true
+                }
                 // --- End Image Display ---
 
 
-                //<-----CHANGE START------>
                 // --- Status and Download Button Row ---
                 HStack {
                      // Status Text
@@ -89,26 +93,31 @@ struct ImageDetailView: View {
                           .foregroundColor(.secondary)
                 }
                 .padding(.horizontal) // Padding for remaining details
-                //<-----CHANGE END-------->
 
                 Spacer() // Pushes content up if ScrollView has extra space
             }
             .padding(.vertical) // Vertical padding for the outer VStack
-        }
+        } // End ScrollView
         .navigationTitle("Image Details")
         .navigationBarTitleDisplayMode(.inline)
         // --- Alert for Save Status ---
         .alert(isPresented: $showSaveAlert) {
             Alert(title: Text(saveAlertTitle), message: Text(saveAlertMessage), dismissButton: .default(Text("OK")))
         }
+        // <<< Added Fullscreen Cover Modifier >>>
+        .fullScreenCover(isPresented: $isShowingFullScreenImage) {
+            // Pass the cached image if available, otherwise a placeholder system image.
+            // FullScreenImageView requires an Image, not UIImage.
+            let imageToPass = Image(uiImage: cachedImage ?? UIImage(systemName: "photo.fill")!) // Use placeholder if cache miss
+            FullScreenImageView(imageData: image) // 'image' is the ImageData passed to ImageDetailView
+                   .environmentObject(imageDataManager)
+        }
         // Removed the .toolbar modifier
         // EnvironmentObject injection remains
         .environmentObject(imageDataManager)
-    }
+    } // End body
 
-    // Functions initiateSaveProcess, handleSaveCompletion, presentSaveAlert remain exactly the same
-    //<-----CHANGE START------>
-    // (Functions are identical to previous step, just ensuring they are present)
+    // --- Helper Functions (Unchanged) ---
     private func initiateSaveProcess() {
         guard let url = image.processedImageUrl ?? image.originalImageUrl else {
             presentSaveAlert(success: false, message: "Image URL not found.")
@@ -139,7 +148,6 @@ struct ImageDetailView: View {
          saveAlertMessage = message
          showSaveAlert = true
     }
-    //<-----CHANGE END-------->
-}
+} // End struct
 
 // MARK: END MODIFIED FILE - Views/ImageDetailView.swift
