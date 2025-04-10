@@ -5,9 +5,11 @@
 // Replaced NSCache with Core Data for persistent image caching.
 // Fixed optional binding error for url.absoluteString.
 // Added background polling timer.
-// <-----CHANGE START------>
 // Added pending upload queue and logic.
+// <-----CHANGE START------>
+// Added property to track last successful upload time for notification.
 // <-----CHANGE END-------->
+
 
 import Foundation
 import SwiftUI // For UIImage and ObservableObject
@@ -28,12 +30,15 @@ class ImageDataManager: ObservableObject {
     // Optional: Progress for preloading, could be 0.0 to 1.0
     @Published var preloadingProgress: Double = 0.0
     @Published var isPreloading: Bool = false
-    //<-----CHANGE START------>
     // Queue for uploads initiated but not yet confirmed by backend fetch
     @Published var pendingUploads: [PendingUploadInfo] = []
+    //<-----CHANGE START------>
+    // Timestamp of the last successful background upload completion
+    @Published var lastUploadSuccessTime: Date? = nil
+    //<-----CHANGE END-------->
     // Store previous image count to calculate acknowledged uploads
     private var previousImageCount: Int = 0
-    //<-----CHANGE END-------->
+
 
     // --- Caching ---
     // Core Data Persistent Container
@@ -68,10 +73,8 @@ class ImageDataManager: ObservableObject {
 
     init() {
         print("ImageDataManager: Initialized.")
-        //<-----CHANGE START------>
         // Store initial count (will be 0 unless data loaded differently)
         self.previousImageCount = self.images.count
-        //<-----CHANGE END-------->
         // Start polling when the manager is initialized.
         // This assumes the manager is created when needed (e.g., at app launch or login).
         startPolling()
@@ -115,7 +118,6 @@ class ImageDataManager: ObservableObject {
                     return
                 }
 
-                //<-----CHANGE START------>
                 // --- Pending Queue Decrement Logic ---
                 let newlyFetchedCount = fetchedImages.count
                 let acknowledgedCount = newlyFetchedCount - self.previousImageCount
@@ -132,7 +134,6 @@ class ImageDataManager: ObservableObject {
                 // Update the previous count *after* comparison
                 self.previousImageCount = newlyFetchedCount
                 // --- End Pending Queue Logic ---
-                //<-----CHANGE END-------->
 
 
                 print("ImageDataManager: Successfully fetched \(fetchedImages.count) images.")
@@ -152,10 +153,8 @@ class ImageDataManager: ObservableObject {
                 print("ImageDataManager: Error fetching images: \(error.localizedDescription)")
                 self.listError = error
                 self.isLoadingList = false // Mark as finished loading (with error)
-                //<-----CHANGE START------>
                 // Reset previous count on error? Maybe not, keep it for next successful fetch comparison.
                 // self.previousImageCount = 0
-                //<-----CHANGE END-------->
             } catch {
                 guard !Task.isCancelled else {
                     print("ImageDataManager: Fetch task cancelled before handling unknown error.")
@@ -165,15 +164,12 @@ class ImageDataManager: ObservableObject {
                 print("ImageDataManager: Unknown error during image fetch: \(error)")
                 self.listError = .unexpectedResponse
                 self.isLoadingList = false // Mark as finished loading (with error)
-                //<-----CHANGE START------>
                 // Reset previous count on error? Maybe not.
                 // self.previousImageCount = 0
-                //<-----CHANGE END-------->
             }
         }
     }
 
-    //<-----CHANGE START------>
     /// Adds information about a newly initiated upload to the pending queue.
     func addImageToPendingQueue() {
         // Create info for the pending upload. No thumbnail stored for now.
@@ -183,7 +179,6 @@ class ImageDataManager: ObservableObject {
         // No longer need to store backend count at time of upload.
         // Decrement logic handles it based on count increase during fetch.
     }
-    //<-----CHANGE END-------->
 
 
     /// Starts the background polling timer.
@@ -198,7 +193,7 @@ class ImageDataManager: ObservableObject {
              self?.prepareImageData()
         }
         // Fire immediately on start? Optional.
-        pollingTimer?.fire() // Uncomment to fetch immediately when polling starts
+         pollingTimer?.fire() // Uncomment to fetch immediately when polling starts
     }
 
     /// Stops the background polling timer.
@@ -465,12 +460,10 @@ class ImageDataManager: ObservableObject {
         activeDownloads.removeAll()
         preloadTask?.cancel()
         isPreloading = false
-        //<-----CHANGE START------>
         // Clear pending queue and reset count on manual cache clear
         pendingUploads.removeAll()
         previousImageCount = 0
         print("ImageDataManager: Cleared pending uploads queue during cache clear.")
-        //<-----CHANGE END-------->
 
 
         // Perform delete on a background context
