@@ -1,14 +1,16 @@
-// MARK: MODIFIED FILE - Views/SettingsView.swift
+// MARK: MODIFIED FILE - Views/UserInfoView.swift
 // Updated to clear ImageDataManager cache on logout
+// <-----CHANGE START------>
+// Added call to stop ImageDataManager polling on logout
+// <-----CHANGE END-------->
+
 
 import SwiftUI
 
 struct UserInfoView: View {
      @EnvironmentObject var userManager: UserManager
-     // MARK: <<< ADDED START >>>
-     // Inject ImageDataManager to clear cache
+     // Inject ImageDataManager to clear cache and stop polling
      @EnvironmentObject var imageDataManager: ImageDataManager
-     // MARK: <<< ADDED END >>>
 
      var body: some View {
           Form {
@@ -16,13 +18,17 @@ struct UserInfoView: View {
                    Text("Username: \(userManager.userName ?? "N/A")")
                    Text("User ID: \(userManager.userIdentifier ?? "N/A")")
                    Button("Log Out", role: .destructive) {
-                        // MARK: <<< MODIFIED START >>>
-                        // Clear image cache BEFORE clearing user credentials
-                        print("SettingsView: Logging out. Clearing image cache.")
+                        // <-----CHANGE START------>
+                        // 1. Stop polling BEFORE clearing cache/user
+                        print("UserInfoView: Logging out. Stopping image polling.")
+                        imageDataManager.stopPolling()
+                        // 2. Clear image cache
+                        print("UserInfoView: Clearing image cache.")
                         imageDataManager.clearCache()
-                        // Then clear user session
+                        // 3. Then clear user session
+                        print("UserInfoView: Clearing user credentials.")
                         userManager.clearUser()
-                        // MARK: <<< MODIFIED END >>>
+                        // <-----CHANGE END-------->
                    }
               }
               // Add other settings sections...
@@ -30,4 +36,4 @@ struct UserInfoView: View {
           .navigationTitle("User")
      }
 }
-// MARK: END MODIFIED FILE - Views/SettingsView.swift
+// MARK: END MODIFIED FILE - Views/UserInfoView.swift
