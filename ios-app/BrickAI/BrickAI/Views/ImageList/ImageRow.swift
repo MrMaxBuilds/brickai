@@ -1,26 +1,24 @@
-// MARK: MODIFIED FILE - Views/ImageList/ImageRow.swift
+// MARK: REVERTED FILE - Views/ImageList/ImageRow.swift
 // File: BrickAI/Views/ImageList/ImageRow.swift
 // Load cached image asynchronously in onAppear to prevent blocking main thread.
+// Reverted to only handle ImageData, not PendingUploadInfo.
 
 import SwiftUI
 
 // Row view for the list
 struct ImageRow: View {
-    let image: ImageData
+    let image: ImageData // Only handles acknowledged images now
     // Get ImageDataManager from environment to access cache
     @EnvironmentObject var imageDataManager: ImageDataManager
 
-    //<-----CHANGE START------>
     // State to hold the image loaded from cache asynchronously
     @State private var cachedUIImage: UIImage? = nil
     @State private var isLoadingCache: Bool = false // Track cache loading state
-    //<-----CHANGE END-------->
 
     var body: some View {
         let imageUrl = image.processedImageUrl ?? image.originalImageUrl
         HStack(spacing: 15) {
             Group {
-                //<-----CHANGE START------>
                 // 1. Display cached image from state if available
                 if let loadedImage = cachedUIImage {
                     Image(uiImage: loadedImage)
@@ -32,32 +30,24 @@ struct ImageRow: View {
                      ZStack { Color(.systemGray6); ProgressView().scaleEffect(0.7) } // Smaller progress for cache load
                 // 3. Fallback to AsyncImage if not cached (and not loading cache)
                 } else {
-                //<-----CHANGE END-------->
                     AsyncImage(url: imageUrl) { phase in
                         switch phase {
                         case .empty:
                             ZStack { Color(.systemGray5); ProgressView() } // Standard progress for network load
                         case .success(let loadedImage):
                             loadedImage.resizable().aspectRatio(contentMode: .fill).clipped()
-                                //<-----CHANGE START------>
-                                // Optional: Update state if AsyncImage succeeds, although onAppear should handle cache eventually
-                                //.onAppear { self.cachedUIImage = loadedImage } // Might cause recursion? Be careful. Let onAppear handle cache update.
-                                //<-----CHANGE END-------->
                         case .failure:
                             ZStack { Color(.systemGray5); Image(systemName: "photo.fill").resizable().aspectRatio(contentMode: .fit).padding(8).foregroundColor(.secondary) }
                         @unknown default: EmptyView()
                         }
                     }
-                    //<-----CHANGE START------>
                     // Trigger network download/cache only if cache check is done and image wasn't found
-                    // We do this inside the `else` block of the cache check now.
                     .onAppear {
                         // This check ensures we only trigger ensureImageIsCached if the initial cache load finished and found nothing.
                          if !isLoadingCache && cachedUIImage == nil {
                               imageDataManager.ensureImageIsCached(for: imageUrl)
                          }
                     }
-                    //<-----CHANGE END-------->
                 }
             }
             .frame(width: 60, height: 60)
@@ -75,21 +65,19 @@ struct ImageRow: View {
             Spacer()
         }
         .padding(.vertical, 8)
-        //<-----CHANGE START------>
         // --- Task to load cached image asynchronously ---
         .task { // .task automatically handles cancellation
-             // Only attempt cache load if we haven't already loaded it
-             if cachedUIImage == nil {
+             // Only attempt cache load if we haven't already loaded it and URL is valid
+             if cachedUIImage == nil, let url = imageUrl {
                   isLoadingCache = true // Indicate cache check is starting
                   // Perform synchronous cache check within an async task
-                  let loadedImage = imageDataManager.getImage(for: imageUrl)
+                  let loadedImage = imageDataManager.getImage(for: url)
                   // Update state on main thread (implicit with @State + .task)
                   cachedUIImage = loadedImage
                   isLoadingCache = false // Indicate cache check is finished
                    // If image was found in cache, ensureImageIsCached won't be called by AsyncImage's onAppear block
              }
         }
-        //<-----CHANGE END-------->
 
     }
 
@@ -103,4 +91,4 @@ struct ImageRow: View {
         }
     }
 }
-// MARK: END MODIFIED FILE - Views/ImageList/ImageRow.swift
+// MARK: END REVERTED FILE - Views/ImageList/ImageRow.swift
