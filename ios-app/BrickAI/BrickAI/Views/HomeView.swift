@@ -2,8 +2,9 @@
 // Changed settings button icon to person.circle.fill and made it more unassuming.
 // Added camera switch button
 // Added success popup notification triggered by ImageDataManager.
-// <-----CHANGE START------>
 // Removed internal UploadSuccessPopup definition and use UploadSuccessPopupView from separate file.
+// <-----CHANGE START------>
+// Added notification badge to Image List button showing actively processing count.
 // <-----CHANGE END-------->
 
 
@@ -14,7 +15,7 @@ struct HomeView: View {
     // Access shared managers
     @StateObject private var cameraManager = CameraManager.shared
     @EnvironmentObject var userManager: UserManager // Assuming provided by parent (e.g., LoginView)
-    // Access ImageDataManager to monitor upload success
+    // Access ImageDataManager to monitor upload success and processing count
     @EnvironmentObject var imageDataManager: ImageDataManager
     // State to control the success popup visibility
     @State private var showSuccessPopup = false
@@ -73,16 +74,33 @@ struct HomeView: View {
 
                                        Spacer() // Right align list button
 
-                                       // Image List Button
+                                       //<-----CHANGE START------>
+                                       // --- Image List Button with Badge ---
                                        NavigationLink(destination: ImageListView()) {
-                                            Image(systemName: "photo.stack")
-                                                .font(.title2)
-                                                .foregroundColor(.white)
-                                                .padding()
-                                                .background(Color.black.opacity(0.5))
-                                                .clipShape(Circle())
+                                            ZStack(alignment: .topTrailing) { // Use ZStack for badge positioning
+                                                // Base Button Content
+                                                Image(systemName: "photo.stack")
+                                                    .font(.title2)
+                                                    .foregroundColor(.white)
+                                                    .padding() // Padding for the icon itself
+                                                    .background(Color.black.opacity(0.5))
+                                                    .clipShape(Circle())
+
+                                                // Badge Overlay (only if count > 0)
+                                                if imageDataManager.activelyProcessingCount > 0 {
+                                                     Text("\(imageDataManager.activelyProcessingCount)")
+                                                         .font(.caption2.bold())
+                                                         .foregroundColor(.white)
+                                                         .padding(5) // Padding inside the circle
+                                                         .background(Color.red)
+                                                         .clipShape(Circle())
+                                                         // Offset the badge slightly
+                                                         .offset(x: 5, y: -5)
+                                                }
+                                            }
                                         }
                                         .padding(.trailing)
+                                        //<-----CHANGE END-------->
 
                                    } // End HStack for bottom controls
                                    .padding(.bottom, 40) // Padding from bottom edge
@@ -93,10 +111,8 @@ struct HomeView: View {
                                // Added overlay within the ZStack containing CameraLiveView
                                VStack {
                                     if showSuccessPopup {
-                                        //<-----CHANGE START------>
                                         // Use the new view from the separate file
                                         UploadSuccessPopupView()
-                                        //<-----CHANGE END-------->
                                              .transition(.move(edge: .top).combined(with: .opacity))
                                              .onAppear {
                                                  // Cancel any existing hide task before starting a new one
@@ -232,6 +248,5 @@ struct NoAccessView: View {
          .background(Color(.systemBackground))
      }
 }
-
 
 // MARK: END MODIFIED FILE - Views/HomeView.swift

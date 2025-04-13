@@ -6,10 +6,10 @@
 // Fixed optional binding error for url.absoluteString.
 // Added background polling timer.
 // Added pending upload queue and logic.
-// <-----CHANGE START------>
 // Added property to track last successful upload time for notification.
+// <-----CHANGE START------>
+// Added computed property for actively processing image count.
 // <-----CHANGE END-------->
-
 
 import Foundation
 import SwiftUI // For UIImage and ObservableObject
@@ -32,12 +32,25 @@ class ImageDataManager: ObservableObject {
     @Published var isPreloading: Bool = false
     // Queue for uploads initiated but not yet confirmed by backend fetch
     @Published var pendingUploads: [PendingUploadInfo] = []
-    //<-----CHANGE START------>
     // Timestamp of the last successful background upload completion
     @Published var lastUploadSuccessTime: Date? = nil
-    //<-----CHANGE END-------->
     // Store previous image count to calculate acknowledged uploads
     private var previousImageCount: Int = 0
+
+    //<-----CHANGE START------>
+    // --- Computed Property for Actively Processing Count ---
+    var activelyProcessingCount: Int {
+        // Count items in the pending queue
+        let pendingCount = pendingUploads.count
+        // Count acknowledged images that are not in a final state (COMPLETED or FAILED)
+        let processingAcknowledgedCount = images.filter { image in
+            let upperStatus = image.status.uppercased()
+            return upperStatus != "COMPLETED" && upperStatus != "FAILED"
+        }.count
+        // Return the sum
+        return pendingCount + processingAcknowledgedCount
+    }
+    //<-----CHANGE END-------->
 
 
     // --- Caching ---

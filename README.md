@@ -127,7 +127,9 @@ You are a senior software engineer and your job is to code. I am your boss. Your
 You MUST MUST MUST output full and complete files. When you output code, do not change any formatting or comments, LEAVE EVERYTHING THE SAME EXCEPT YOUR NEW CODE. The only format you may change is to mark where you change code. Example:
 
 <-----CHANGE START------>
-
 your code change
-
 <-----CHANGE END-------->  
+
+## TODO List
+[] Add delete functionality backend/frontend
+[] add payments
