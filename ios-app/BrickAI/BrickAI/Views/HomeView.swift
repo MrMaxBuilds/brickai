@@ -5,6 +5,7 @@
 // Removed internal UploadSuccessPopup definition and use UploadSuccessPopupView from separate file.
 // <-----CHANGE START------>
 // Added notification badge to Image List button showing actively processing count.
+// Added Usages/Payments Icon Button to top-left.
 // <-----CHANGE END-------->
 
 
@@ -95,7 +96,6 @@ struct HomeView: View {
 
                                        Spacer() // Right align list button
 
-                                       //<-----CHANGE START------>
                                        // --- Image List Button with Badge ---
                                        NavigationLink(destination: ImageListView()) {
                                             ZStack(alignment: .topTrailing) { // Use ZStack for badge positioning
@@ -121,7 +121,6 @@ struct HomeView: View {
                                             }
                                         }
                                         .padding(.trailing)
-                                        //<-----CHANGE END-------->
 
                                    } // End HStack for bottom controls
                                    .padding(.bottom, 40) // Padding from bottom edge
@@ -163,11 +162,27 @@ struct HomeView: View {
 
 
                            } // End ZStack for CameraLiveView + overlays
-
-                           // --- Settings Button Overlay (applied to the outer ZStack) ---
-                           // Needs to be outside the inner ZStack if it should always be visible
-                           // Or inside if it should only appear with CameraLiveView
-                           // Let's keep it outside for consistency.
+                            // <-----CHANGE START------>
+                            // --- Top Left: Usages/Payments Icon ---
+                            .overlay(alignment: .topLeading) {
+                                NavigationLink(destination: PaymentsView()) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "bolt.fill")
+                                            .foregroundColor(.blue)
+                                        Text("5")
+                                            .font(.callout)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary) // Or .blue if preferred
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.gray.opacity(0.15)) // Light background
+                                    .cornerRadius(20) // Capsule shape
+                                }
+                                .padding([.top, .leading], 16)
+                            }
+                            // <-----CHANGE END-------->
+                           // --- Top Right: Settings Button Overlay ---
                             .overlay(alignment: .topTrailing) {
                                 NavigationLink(destination: UserInfoView()) {
                                        Image(systemName: "person.circle.fill")
@@ -193,7 +208,7 @@ struct HomeView: View {
               .onChange(of: photoPickerItem) { oldValue, newValue in
                   if let item = newValue {
                       Task {
-                          if let data = try? await item.loadTransferable(type: Data.self), 
+                          if let data = try? await item.loadTransferable(type: Data.self),
                              let uiImage = UIImage(data: data) {
                               await MainActor.run {
                                   cameraManager.capturedImage = uiImage
