@@ -10,6 +10,7 @@
 
 import SwiftUI
 import AVFoundation
+import PhotosUI
 
 struct HomeView: View {
     // Access shared managers
@@ -21,6 +22,9 @@ struct HomeView: View {
     @State private var showSuccessPopup = false
     // Store the task responsible for hiding the popup to allow cancellation
     @State private var hidePopupTask: Task<Void, Never>? = nil
+    // State to manage photo selection from library
+    @State private var photoPickerItem: PhotosPickerItem?
+    @State private var showPhotoPicker = false
 
 
     var body: some View {
@@ -60,6 +64,18 @@ struct HomeView: View {
                                                .clipShape(Circle())
                                        }
                                        .padding(.leading)
+
+                                       // Gallery Button
+                                       Button(action: {
+                                           showPhotoPicker = true
+                                       }) {
+                                           Image(systemName: "photo.on.rectangle")
+                                               .font(.title2)
+                                               .foregroundColor(.white)
+                                               .padding()
+                                               .background(Color.black.opacity(0.5))
+                                               .clipShape(Circle())
+                                       }
 
                                        Spacer() // Center capture button
 
@@ -168,6 +184,20 @@ struct HomeView: View {
              // --- View Modifiers ---
               .navigationBarHidden(true)
               .statusBar(hidden: true)
+              .photosPicker(isPresented: $showPhotoPicker, selection: $photoPickerItem, matching: .images, preferredItemEncoding: .current)
+              .onChange(of: photoPickerItem) { oldValue, newValue in
+                  if let item = newValue {
+                      Task {
+                          if let data = try? await item.loadTransferable(type: Data.self), 
+                             let uiImage = UIImage(data: data) {
+                              await MainActor.run {
+                                  cameraManager.capturedImage = uiImage
+                                  photoPickerItem = nil
+                              }
+                          }
+                      }
+                  }
+              }
               .onAppear {
                   print("HomeView: Appeared.")
                   cameraManager.checkCameraPermission()

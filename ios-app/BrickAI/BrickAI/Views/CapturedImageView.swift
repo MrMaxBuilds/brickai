@@ -5,6 +5,7 @@
 // Update ImageDataManager's lastUploadSuccessTime on successful upload.
 // <-----CHANGE START------>
 // Moved update of lastUploadSuccessTime to trigger immediately before upload starts.
+// Added image resizing to reduce file size before upload.
 // <-----CHANGE END-------->
 
 
@@ -65,30 +66,30 @@ struct CapturedImageView: View {
                          print("CapturedImageView: Confirm tapped. Dismissing view immediately.")
                          cameraManager.resetCaptureState()
 
-                         //<-----CHANGE START------>
                          // 1.5 Update success timestamp HERE to trigger popup immediately
                          Task { @MainActor in // Ensure update is on main actor
                              imageDataManager.lastUploadSuccessTime = Date()
                              print("CapturedImageView: Updated lastUploadSuccessTime to trigger popup NOW.")
                          }
-                         //<-----CHANGE END-------->
 
                          // 2. Launch the upload in a background Task
                          print("CapturedImageView: Launching upload task in background.")
                          Task(priority: .background) {
                              // Keep a copy of the image data for the background task
                              let imageToUpload = self.image
+                             
+                             // Resize the image before uploading to reduce file size
+                             let resizedImage = resizeImage(imageToUpload)
+                             print("CapturedImageView: Resized image for upload. Original size: \(imageToUpload.size), New size: \(resizedImage.size)")
 
                              // Call NetworkManager's uploadImage function.
-                             NetworkManager.uploadImage(imageToUpload) { result in
+                             NetworkManager.uploadImage(resizedImage) { result in
                                  // This completion handler still runs on the main thread when the upload finishes
                                  switch result {
                                  case .success(let urlString):
                                      // Upload finished successfully in the background
                                      print("CapturedImageView (Background Task): Upload Successful! URL: \(urlString)")
-                                     //<-----CHANGE START------>
                                      // REMOVED timestamp update from here
-                                     //<-----CHANGE END-------->
                                      // NOTE: Polling should eventually reflect this, manual refresh might not be needed.
 
                                  case .failure(let error):
@@ -128,6 +129,45 @@ struct CapturedImageView: View {
               // Ensure status messages were cleared (though they are removed now)
               print("CapturedImageView: Appeared.")
          }
+    }
+    
+    // Resize and compress the image to reduce file size
+    private func resizeImage(_ image: UIImage) -> UIImage {
+        let maxDimension: CGFloat = 1200 // Maximum width/height (adjust as needed)
+        let compressionQuality: CGFloat = 0.7 // JPEG compression quality (0.0-1.0)
+        
+        // Calculate scaling factor to maintain aspect ratio
+        let originalSize = image.size
+        var newSize = originalSize
+        
+        if originalSize.width > maxDimension || originalSize.height > maxDimension {
+            let widthRatio = maxDimension / originalSize.width
+            let heightRatio = maxDimension / originalSize.height
+            let ratio = min(widthRatio, heightRatio)
+            
+            newSize = CGSize(width: originalSize.width * ratio, height: originalSize.height * ratio)
+        } else {
+            // No resizing needed if already small enough
+            return compressImage(image, compressionQuality: compressionQuality)
+        }
+        
+        // Render the resized image
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? image
+        UIGraphicsEndImageContext()
+        
+        // Apply JPEG compression to the resized image
+        return compressImage(resizedImage, compressionQuality: compressionQuality)
+    }
+    
+    // Compress image using JPEG compression
+    private func compressImage(_ image: UIImage, compressionQuality: CGFloat) -> UIImage {
+        guard let imageData = image.jpegData(compressionQuality: compressionQuality),
+              let compressedImage = UIImage(data: imageData) else {
+            return image // Return original if compression fails
+        }
+        return compressedImage
     }
 }
 
