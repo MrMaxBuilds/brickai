@@ -10,20 +10,23 @@ import SwiftUI
 
 @main
 struct BrickAIApp: App {
-    // MARK: <<< MODIFIED START >>>
     // Instantiate UserManager and ImageDataManager as StateObjects at the top level
-    @StateObject private var userManager = UserManager.shared // Keep as singleton access if preferred
+    @StateObject private var userManager = UserManager.shared
     @StateObject private var imageDataManager = ImageDataManager()
-    // MARK: <<< MODIFIED END >>>
+    // <-----CHANGE START------>
+    // Instantiate StoreManager as a StateObject
+    @StateObject private var storeManager = StoreManager()
+    // <-----CHANGE END-------->
 
     var body: some Scene {
         WindowGroup {
-            // MARK: <<< MODIFIED START >>>
-            // Pass both managers into the environment
+            // Pass all managers into the environment
             LoginView()
               .environmentObject(userManager)
-              .environmentObject(imageDataManager) // Inject ImageDataManager
-            // MARK: <<< MODIFIED END >>>
+              .environmentObject(imageDataManager)
+              // <-----CHANGE START------>
+              .environmentObject(storeManager) // Inject StoreManager
+              // <-----CHANGE END-------->
         }
     }
 }
