@@ -31,7 +31,7 @@ async function processImageAndLogStream(
     awsS3BucketName: string,
     awsRegion: string,
     piApiKey: string
-): Promise<void> { // Returns void, updates status internally
+): Promise<boolean> { // MODIFIED: Returns boolean for success
     const processingApiUrl = 'https://api.piapi.ai/v1/chat/completions';
     // Use lots of detailed colors and try to keep their features intact. 
     const defaultPrompt = "Turn this person or people into lego people! It should be the scale of regular humans but built in lego"
@@ -239,6 +239,7 @@ async function processImageAndLogStream(
             }
         }
     }
+    return success; // MODIFIED: Return success status
 }
 // --- End Helper Function ---
 
@@ -276,7 +277,6 @@ export async function POST(req: NextRequest) {
 
     try {
         // --- 1. Verify Backend Session Token ---
-        // (Code unchanged)
         const authHeader = req.headers.get('authorization');
         if (!authHeader || !authHeader.startsWith('Bearer ')) { return NextResponse.json({ error: 'Unauthorized: Missing or invalid Authorization header.' }, { status: 401 }); }
         const sessionToken = authHeader.substring(7);
@@ -291,8 +291,29 @@ export async function POST(req: NextRequest) {
              return NextResponse.json({ error: errorMessage }, { status: 401 });
         }
 
+        // --- 1.5. Check User Credits --- ADDED STEP
+        console.log(`Upload Route: Checking credits for user ${appleUserId}`);
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('usage_credits')
+            .eq('apple_user_id', appleUserId)
+            .single();
+
+        if (userError) {
+            console.error(`Upload Route: Error fetching user ${appleUserId} for credit check:`, userError);
+            return NextResponse.json({ error: 'Error verifying user status.' }, { status: 500 });
+        }
+        if (!userData) {
+            console.warn(`Upload Route: User ${appleUserId} not found during credit check.`);
+            return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+        }
+        if (userData.usage_credits <= 0) {
+            console.log(`Upload Route: User ${appleUserId} has insufficient credits (${userData.usage_credits}).`);
+            return NextResponse.json({ error: 'Insufficient credits. Please purchase more.' }, { status: 402 });
+        }
+        console.log(`Upload Route: User ${appleUserId} has ${userData.usage_credits} credits. Proceeding.`);
+
         // --- 2. Process Image Upload (Get image data) ---
-        // (Code unchanged)
         const contentType = req.headers.get('content-type');
         if (!contentType || !contentType.startsWith('image/')) { return NextResponse.json({ error: 'Invalid Content-Type. Must be an image type.' }, { status: 400 }); }
         const buffer = await req.arrayBuffer();
@@ -324,7 +345,7 @@ export async function POST(req: NextRequest) {
 
         // --- 5. Trigger Image Stream Processing and Update (Synchronous Call) ---
         console.log("Upload Route: Triggering synchronous image stream processing, accumulation, and update attempt...");
-        await processImageAndLogStream( // Use the stream handling function
+        const processingSuccessful = await processImageAndLogStream( // MODIFIED: Capture result
             supabase,
             s3Client,
             imageId || 0,
@@ -334,7 +355,43 @@ export async function POST(req: NextRequest) {
             awsRegion,
             piApiKey
         );
-         console.log("Upload Route: Synchronous stream processing and update function finished.");
+         console.log(`Upload Route: Synchronous stream processing and update function finished. Success: ${processingSuccessful}`);
+
+        // --- 5.5. Decrement Credits on Success --- ADDED STEP
+        if (processingSuccessful) {
+            console.log(`Upload Route: Processing successful for image ID ${imageId}. Attempting to decrement credits for user ${appleUserId} via direct update.`);
+            
+            // Fetch current credits first to mitigate some staleness, though a small race condition window remains.
+            const { data: currentUserData, error: fetchError } = await supabase
+                .from('users')
+                .select('usage_credits')
+                .eq('apple_user_id', appleUserId)
+                .single();
+
+            if (fetchError) {
+                console.error(`Upload Route: CRITICAL - Failed to fetch user ${appleUserId} before decrementing credits:`, fetchError);
+                // Do not fail the request for the user, as they got their image.
+                // Log this as a high-priority issue.
+            } else if (!currentUserData) {
+                console.error(`Upload Route: CRITICAL - User ${appleUserId} not found before attempting credit decrement.`);
+            } else if (currentUserData.usage_credits > 0) {
+                const { error: decrementError } = await supabase
+                    .from('users')
+                    .update({ usage_credits: currentUserData.usage_credits - 1 })
+                    .eq('apple_user_id', appleUserId);
+
+                if (decrementError) {
+                    console.error(`Upload Route: CRITICAL - Failed to decrement credits for user ${appleUserId} after successful image processing:`, decrementError);
+                    // Log this as a high-priority issue.
+                } else {
+                    console.log(`Upload Route: Successfully decremented credits for user ${appleUserId}. New count (local view): ${currentUserData.usage_credits - 1}`);
+                }
+            } else {
+                 console.log(`Upload Route: User ${appleUserId} had 0 or fewer credits (${currentUserData.usage_credits}) before attempted decrement. No decrement performed.`);
+            }
+        } else {
+            console.log(`Upload Route: Processing was not successful for image ID ${imageId}. Credits not decremented for user ${appleUserId}.`);
+        }
 
         // --- 6. Construct and Return Response to Client ---
         // The response indicates acceptance; client needs to check status via /images endpoint

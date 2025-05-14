@@ -43,7 +43,7 @@ class StoreManager: NSObject, ObservableObject {
     // MARK: - Private Properties
     // Set of product identifiers to fetch. This MUST match what's in App Store Connect.
     // For this task, we'll use a placeholder. Replace with your actual Product ID.
-    private let productIdentifiers: Set<String> = ["com.yourapp.30tries"] // <<< REPLACE THIS
+    private let productIdentifiers: Set<String> = ["com.NEXTAppDevelopment.brickai.5dollars"] 
     
     // Completion handler for the current purchase attempt
     private var onPurchaseCompleted: PurchaseCompletionHandler?
@@ -228,7 +228,7 @@ extension StoreManager: SKPaymentTransactionObserver {
     /// Handles a failed transaction.
     private func handleFailed(_ transaction: SKPaymentTransaction) {
         print("StoreManager: Handling failed transaction for \(transaction.payment.productIdentifier)")
-        var errorToReport = StoreError.unknown
+        var errorToReport: Error = StoreError.unknown
         if let error = transaction.error as? SKError {
             // More specific SKError handling
             if error.code == .paymentCancelled {
