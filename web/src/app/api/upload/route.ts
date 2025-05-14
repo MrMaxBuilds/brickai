@@ -59,7 +59,7 @@ async function processImageAndLogStream(
                 'Accept': 'text/event-stream', // Expect SSE
             },
             body: JSON.stringify({
-                model: "gpt-4o-image-preview", // Or appropriate model
+                model: "gpt-4o-image", // Or appropriate model
                 messages: [
                     {
                         role: "user",
@@ -108,7 +108,6 @@ async function processImageAndLogStream(
                     if (line.startsWith('data:')) {
                         messageCount++;
                         const jsonData = line.substring(5).trim();
-                         console.log(`\n--- SSE Line ${messageCount} Received (Image ID: ${imageId}) ---\n${line}\n---`);
 
                         if (jsonData === '[DONE]') {
                             console.log(`--- SSE [DONE] signal received (Image ID: ${imageId}) ---`);
@@ -118,8 +117,6 @@ async function processImageAndLogStream(
 
                         try {
                             const parsedData = JSON.parse(jsonData);
-                             console.log(`--- Parsed JSON Data ${messageCount} (Image ID: ${imageId}) ---`);
-                             // console.dir(parsedData, { depth: 1 }); // Log shallow structure
 
                             // Accumulate content fragments
                             const contentFragment = parsedData?.choices?.[0]?.delta?.content;
