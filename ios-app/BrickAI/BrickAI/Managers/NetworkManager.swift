@@ -408,6 +408,31 @@ class NetworkManager {
             }
         }
     }
+
+    // Added function to call the delete account API endpoint
+    static func deleteAccount(completion: @escaping (Result<Void, NetworkError>) -> Void) {
+        guard let endpoint = endpointURL(path: "api/account/delete") else {
+            let urlString = (Bundle.main.object(forInfoDictionaryKey: "APIEndpointURL") as? String ?? "NF") + "/api/account/delete"
+            DispatchQueue.main.async { completion(.failure(.invalidURL(urlString))) }
+            return
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "DELETE"
+        print("NetworkManager: Requesting account deletion...")
+
+        performRequest(originalRequest: request) { result in
+            switch result {
+            case .success: // If performRequest succeeds, it means a 2xx response was received.
+                // The backend returns a JSON message, but for the client, a 200/204 means success.
+                print("NetworkManager: Account deletion request successful.")
+                completion(.success(()))
+            case .failure(let error):
+                print("NetworkManager: Account deletion request failed: \(error.localizedDescription)")
+                completion(.failure(error))
+            }
+        }
+    }
 }
 
 extension DateFormatter {

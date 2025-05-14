@@ -268,7 +268,7 @@ struct NoAccessView: View {
              Text("Camera Access Required").font(.title2).fontWeight(.semibold)
              Text("Enable camera access in Settings to capture photos.")
                  .font(.subheadline).foregroundColor(.gray).multilineTextAlignment(.center).padding(.horizontal, 40)
-             Button("Allow Camera Access", action: onRequestPermission)
+             Button("Continue", action: onRequestPermission)
                   .padding(.vertical, 10).padding(.horizontal, 20).background(Color.blue).foregroundColor(.white).cornerRadius(8).padding(.top)
              Button("Open App Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }}
                  .font(.footnote).padding(.top, 5)

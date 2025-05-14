@@ -12,29 +12,12 @@ class UserManager: ObservableObject {
     @Published private(set) var userIdentifier: String?
     @Published private(set) var isLoggedIn: Bool = false
 
-    // MARK: <<< REMOVED START >>>
-    // Remove the ImageDataManager property and related calls
-    // private var imageDataManager = ImageDataManager() // REMOVED
-    // MARK: <<< REMOVED END >>>
-
     private init() {
         self.userIdentifier = KeychainService.loadString(forKey: kKeychainAccountUserIdentifier)
         self.userName = KeychainService.loadString(forKey: kKeychainAccountUserName)
         let sessionToken = KeychainService.loadString(forKey: kKeychainAccountSessionToken)
         self.isLoggedIn = (self.userIdentifier != nil && !self.userIdentifier!.isEmpty && sessionToken != nil && !sessionToken!.isEmpty)
         print("UserManager Initialized. UserIdentifier loaded: \(self.userIdentifier != nil), UserName loaded: \(self.userName != nil), SessionToken loaded: \(sessionToken != nil). Determined isLoggedIn: \(self.isLoggedIn)")
-
-        // MARK: <<< REMOVED START >>>
-        // Remove trigger from init
-        /*
-        if self.isLoggedIn {
-            print("UserManager: User already logged in on init. Triggering image data preparation.")
-             Task { @MainActor in
-                  imageDataManager.prepareImageData()
-             }
-        }
-        */
-        // MARK: <<< REMOVED END >>>
     }
 
     // Save initial credentials and session token
@@ -133,15 +116,26 @@ class UserManager: ObservableObject {
             self.userName = nil
             self.isLoggedIn = false
             print("UserManager: User data and session token cleared from Keychain and state updated. isLoggedIn set to false.")
-            // MARK: <<< REMOVED START >>>
-            // Remove clearCache call from here
-            /*
-            if wasLoggedIn {
-                 print("UserManager: Clearing image cache on logout.")
-                 self.imageDataManager.clearCache()
+        }
+    }
+
+    // Function to delete the current user's account
+    func deleteCurrentUserAccount(completion: @escaping (Result<Void, NetworkError>) -> Void) {
+        print("UserManager: Attempting to delete current user account.")
+        NetworkManager.deleteAccount { [weak self] result in
+            guard let self = self else { return }
+
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    print("UserManager: Account deletion successful via NetworkManager. Clearing local user data.")
+                    self.clearUser() // Clear local user credentials and state
+                    completion(.success(()))
+                case .failure(let error):
+                    print("UserManager: Account deletion failed: \(error.localizedDescription)")
+                    completion(.failure(error))
+                }
             }
-            */
-            // MARK: <<< REMOVED END >>>
         }
     }
 }
