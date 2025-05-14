@@ -53,18 +53,7 @@ struct HomeView: View {
                                    Spacer()
 
                                    // Bottom Controls Row
-                                   HStack {
-                                       // Camera Switch Button
-                                       Button(action: cameraManager.switchCamera) {
-                                           Image(systemName: "arrow.triangle.2.circlepath.camera")
-                                               .font(.title2)
-                                               .foregroundColor(.white)
-                                               .padding()
-                                               .background(Color.black.opacity(0.5))
-                                               .clipShape(Circle())
-                                       }
-                                       .padding(.leading)
-
+                                   HStack(alignment: .bottom) {
                                        // Gallery Button
                                        Button(action: {
                                            showPhotoPicker = true
@@ -76,17 +65,33 @@ struct HomeView: View {
                                                .background(Color.black.opacity(0.5))
                                                .clipShape(Circle())
                                        }
+                                       .padding(.leading)
 
-                                       Spacer() // Center capture button
+                                       Spacer() // Center the new VStack
 
-                                       // Capture Button
-                                       Button(action: cameraManager.capturePhoto) {
-                                            ZStack {
-                                                Circle().fill(.white).frame(width: 65, height: 65)
-                                                Circle().stroke(.white, lineWidth: 2).frame(width: 75, height: 75)
-                                            }
-                                            .shadow(radius: 5)
+                                       //<-----CHANGE START------>
+                                       // VStack for Capture Button and Switch Camera Button
+                                       VStack(spacing: 15) { // Add spacing between buttons
+                                           // Camera Switch Button (smaller)
+                                           Button(action: cameraManager.switchCamera) {
+                                               Image(systemName: "arrow.triangle.2.circlepath.camera")
+                                                   .font(.title3) // Smaller icon
+                                                   .foregroundColor(.white)
+                                                   .padding(10) // Smaller padding
+                                                   .background(Color.black.opacity(0.5))
+                                                   .clipShape(Circle())
+                                           }
+
+                                           // Capture Button
+                                           Button(action: cameraManager.capturePhoto) {
+                                                ZStack {
+                                                    Circle().fill(.white).frame(width: 65, height: 65)
+                                                    Circle().stroke(.white, lineWidth: 2).frame(width: 75, height: 75)
+                                                }
+                                                .shadow(radius: 5)
+                                           }
                                        }
+                                       //<-----CHANGE END-------->
 
                                        Spacer() // Right align list button
 
