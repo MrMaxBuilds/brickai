@@ -51,9 +51,10 @@ class StoreManager: NSObject, ObservableObject {
     // MARK: - Initialization
     override init() {
         super.init()
+        print("StoreManager: Initializing and preparing to add to payment queue.")
         // Add this class as an observer of the payment queue
         SKPaymentQueue.default().add(self)
-        print("StoreManager: Initialized and added to payment queue.")
+        print("StoreManager: Initialized. Self has been added as an observer to SKPaymentQueue.default().")
     }
 
     deinit {
@@ -77,6 +78,7 @@ class StoreManager: NSObject, ObservableObject {
 
         let request = SKProductsRequest(productIdentifiers: productIdentifiers)
         request.delegate = self
+        print("StoreManager: SKProductsRequest created with identifiers: \(productIdentifiers). Starting request...")
         request.start() // This will trigger delegate methods
     }
 
@@ -207,7 +209,34 @@ extension StoreManager: SKPaymentTransactionObserver {
     private func handlePurchased(_ transaction: SKPaymentTransaction) {
         print("StoreManager: Handling purchased transaction for \(transaction.payment.productIdentifier)")
         
-        // --- IMPORTANT: Grant Content/Update User State ---
+        // --- IMPORTANT: Grant Content/Update User State VIA BACKEND ---
+        let productId = transaction.payment.productIdentifier
+        print("StoreManager: Calling NetworkManager to add credits for product ID: \(productId)")
+
+        NetworkManager.addCreditsForPurchase(productId: productId) { result in
+            // This completion handler is called on the main thread by NetworkManager
+            switch result {
+            case .success(let newTotalCredits):
+                print("StoreManager: Successfully updated credits via backend. New total: \(newTotalCredits).")
+                // Here you could update a local user model or trigger UI updates based on the new credit total
+                // For example: UserManager.shared.updateLocalCredits(newTotalCredits)
+                // Notify the purchase completion handler AFTER successful backend update
+                self.onPurchaseCompleted?(.success(transaction))
+            case .failure(let error):
+                print("StoreManager: Failed to update credits via backend for product ID \(productId). Error: \(error.localizedDescription)")
+                // Handle the error appropriately. 
+                // For now, we still call the purchase completion with success for the transaction itself,
+                // as the App Store purchase was successful. The backend sync failed.
+                // You might want a more sophisticated error handling strategy here, e.g., 
+                // retry mechanism, or informing the user that the purchase was made but credits update failed.
+                // Depending on the error type, you might also consider not fulfilling the purchase locally
+                // if backend sync is critical.
+                // For now, let's assume the purchase is valid and we'll complete it, but log the backend error.
+                self.onPurchaseCompleted?(.success(transaction)) // Or .failure(error) if you want to signify the overall operation failed
+            }
+            self.onPurchaseCompleted = nil // Reset for next purchase (moved here to ensure it's called in both success/failure paths)
+        }
+        // --- OLD Grant Content/Update User State (Conceptual) ---
         // This is where you would:
         // 1. Verify the receipt (ideally server-side, but can be client-side for simplicity initially).
         // 2. If verified, unlock the content or update the user's "tries".
@@ -219,10 +248,6 @@ extension StoreManager: SKPaymentTransactionObserver {
         //     print("StoreManager: 30 tries granted to the user.")
         // }
         // ---
-
-        // Call the completion handler
-        onPurchaseCompleted?(.success(transaction))
-        onPurchaseCompleted = nil // Reset for next purchase
     }
 
     /// Handles a failed transaction.

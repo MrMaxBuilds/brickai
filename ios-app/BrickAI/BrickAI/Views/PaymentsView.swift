@@ -15,11 +15,11 @@ struct PaymentsView: View {
     @State private var alertMessage = ""
 
     // The specific product ID we are interested in for this view
-    private let targetProductID = "com.yourapp.30tries" // <<< MUST MATCH StoreManager AND App Store Connect
+    private let targetProductID = "com.NEXTAppDevelopment.brickai.5dollars" // <<< MUST MATCH StoreManager AND App Store Connect
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Get More Tries")
+            Text("Unlock More Creations")
                 .font(.largeTitle)
                 .fontWeight(.bold)
                 .padding(.top, 30)

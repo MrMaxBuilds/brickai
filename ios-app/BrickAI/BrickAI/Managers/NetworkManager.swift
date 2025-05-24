@@ -433,6 +433,49 @@ class NetworkManager {
             }
         }
     }
+
+    static func addCreditsForPurchase(productId: String, completion: @escaping (Result<Int, NetworkError>) -> Void) {
+        guard let endpoint = endpointURL(path: "api/credits/add") else {
+            let urlString = (Bundle.main.object(forInfoDictionaryKey: "APIEndpointURL") as? String ?? "NF") + "/api/credits/add"
+            DispatchQueue.main.async { completion(.failure(.invalidURL(urlString))) }
+            return
+        }
+
+        let requestBody: [String: String] = ["productId": productId]
+        guard let jsonData = try? JSONEncoder().encode(requestBody) else {
+            DispatchQueue.main.async { completion(.failure(.dataConversionFailed)) } // Or a more specific error
+            return
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        print("NetworkManager: Attempting to add credits for product ID: \(productId)")
+
+        performRequest(originalRequest: request) { result in
+            switch result {
+            case .success(let data):
+                do {
+                    if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let newTotalCredits = jsonResponse["newTotalCredits"] as? Int {
+                        print("NetworkManager: Successfully added credits. New total: \(newTotalCredits)")
+                        completion(.success(newTotalCredits))
+                    } else {
+                        print("NetworkManager: Failed to parse newTotalCredits from response.")
+                        completion(.failure(.unexpectedResponse))
+                    }
+                } catch {
+                    print("NetworkManager: Failed to decode addCredits response: \(error)")
+                    completion(.failure(.unexpectedResponse))
+                }
+            case .failure(let error):
+                print("NetworkManager: Failed to add credits: \(error.localizedDescription)")
+                completion(.failure(error))
+            }
+        }
+    }
 }
 
 extension DateFormatter {

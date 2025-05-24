@@ -12,8 +12,6 @@ const requiredEnvVars = [
 // --- Hardcoded IAP Product ID to Credits Map ---
 const iapProductCreditsMap: Record<string, number> = {
   'com.NEXTAppDevelopment.brickai.5dollars': 30,
-  'com.yourapp.credits.pack25': 25,
-  'com.yourapp.credits.pack50': 50,
   // Add more product IDs and their corresponding credit amounts here
 };
 
@@ -120,7 +118,6 @@ export async function POST(req: NextRequest) {
 
     console.log(`${routeName}: Successfully added ${creditsToAdd} credits to user ${appleUserId}. New total: ${newCreditTotal}`);
     return NextResponse.json({ message: 'Credits added successfully.', newTotalCredits: newCreditTotal }, { status: 200 });
-
   } catch (err: unknown) {
     console.error(`${routeName}: Unhandled error in POST handler:`, err instanceof Error ? err.message : 'Unknown error');
     return NextResponse.json({ error: 'An unexpected internal server error occurred.' }, { status: 500 });

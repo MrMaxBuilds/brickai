@@ -10,7 +10,6 @@ let kKeychainService = Bundle.main.bundleIdentifier ?? "com.default.keychainserv
 
 // Account keys used to identify specific data items
 let kKeychainAccountUserIdentifier = "appleUserIdentifier"
-// DEPRECATED - let kKeychainAccountIdentityToken = "appleIdentityToken" // No longer storing Apple identity token directly
 let kKeychainAccountSessionToken = "backendSessionToken" // Key for storing our backend session token
 let kKeychainAccountUserName = "userName" // Can also store username if desired
 
