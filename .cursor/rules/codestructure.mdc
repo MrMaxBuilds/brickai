@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Rule content
+This repo describes an iOS frontend client in Swift and a NextJS Typescript backend stateless server deployed on vercel. The backend is in the web folder and the frontend is in ios-app/BrickAI/BrickAI
+
+

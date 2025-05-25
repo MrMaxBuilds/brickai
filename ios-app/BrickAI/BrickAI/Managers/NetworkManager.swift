@@ -5,6 +5,32 @@
 import Foundation
 import UIKit
 
+// MARK: <<< ADDED START >>>
+// UserInfo struct to match backend response
+struct UserInfo: Decodable {
+    let appleUserId: String
+    let credits: Int
+}
+
+// MARK: <<< ADDED START >>>
+// Specific response structures for API endpoints
+struct AddCreditsResponse: Decodable {
+    let message: String
+    let userInfo: UserInfo
+}
+
+struct UploadResponse: Decodable {
+    let message: String
+    let url: String?
+    let userInfo: UserInfo
+}
+
+struct ImagesResponse: Decodable {
+    let images: [ImageData] // Assumes ImageData is Decodable
+    let userInfo: UserInfo
+}
+// MARK: <<< ADDED END >>>
+
 // MARK: <<< MODIFIED START >>>
 // NetworkError Enum - Added Equatable conformance
 enum NetworkError: Error, LocalizedError, Equatable {
@@ -152,6 +178,13 @@ class NetworkManager {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            // MARK: <<< MODIFIED START >>>
+            // Always try to extract user credits from data, regardless of error or status code, if data exists
+            if let data = data {
+                self.tryExtractAndUpdateUserCredits(from: data)
+            }
+            // MARK: <<< MODIFIED END >>>
+
             if let error = error {
                 mainThreadCompletion(.failure(.networkRequestFailed(error)))
                 return
@@ -166,15 +199,20 @@ class NetworkManager {
                 print("NetworkManager: Received 401 Unauthorized for \(request.url?.absoluteString ?? "URL"). Attempting token refresh...")
                 Task { // Use Task to call async actor function
                     do {
-                        // Call the actor method
                         let newToken = try await tokenRefresher.refreshTokenIfNeeded()
                         print("NetworkManager: Token refresh successful via actor. Retrying original request...")
 
-                        var retryRequest = originalRequest // Use original request
-                        retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization") // Set NEW token
+                        var retryRequest = originalRequest
+                        retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
 
-                        // Retry the request
                         let retryTask = URLSession.shared.dataTask(with: retryRequest) { retryData, retryResponse, retryError in
+                            // MARK: <<< MODIFIED START >>>
+                            // Always try to extract user credits from retryData if it exists
+                            if let retryData = retryData {
+                                self.tryExtractAndUpdateUserCredits(from: retryData)
+                            }
+                            // MARK: <<< MODIFIED END >>>
+
                             if let retryError = retryError {
                                 mainThreadCompletion(.failure(.networkRequestFailed(retryError)))
                                 return
@@ -195,7 +233,6 @@ class NetworkManager {
                                 mainThreadCompletion(.failure(.serverError(statusCode: retryHttpResponse.statusCode, message: errorMessage)))
                                 return
                             }
-                            // Retry succeeded
                             mainThreadCompletion(.success(retryData ?? Data()))
                         }
                         retryTask.resume()
@@ -215,7 +252,6 @@ class NetworkManager {
                     mainThreadCompletion(.failure(.serverError(statusCode: httpResponse.statusCode, message: errorMessage)))
                     return
                 }
-                // Request succeeded on first try
                 mainThreadCompletion(.success(data ?? Data()))
             }
         }
@@ -305,13 +341,15 @@ class NetworkManager {
             switch result {
             case .success(let data):
                 do {
-                    if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let urlString = jsonResponse["url"] as? String {
+                    let uploadResponse = try self.jsonDecoder.decode(UploadResponse.self, from: data)
+                    if let urlString = uploadResponse.url {
                         completion(.success(urlString))
                     } else {
+                        print("NetworkManager: Upload successful but no URL in response.")
                         completion(.failure(.unexpectedResponse))
                     }
                 } catch {
+                    print("NetworkManager: Failed to decode UploadResponse: \(error.localizedDescription). Data: \(String(data: data, encoding: .utf8) ?? "non-utf8 data")")
                     completion(.failure(.unexpectedResponse))
                 }
             case .failure(let error):
@@ -395,11 +433,11 @@ class NetworkManager {
             switch result {
             case .success(let data):
                 do {
-                    let images = try jsonDecoder.decode([ImageData].self, from: data)
-                    print("NetworkManager: Successfully fetched and decoded \(images.count) images.")
-                    completion(.success(images))
+                    let imagesResponse = try self.jsonDecoder.decode(ImagesResponse.self, from: data)
+                    print("NetworkManager: Successfully fetched and decoded \(imagesResponse.images.count) images.")
+                    completion(.success(imagesResponse.images))
                 } catch {
-                    print("NetworkManager: Failed to decode images JSON: \(error)")
+                    print("NetworkManager: Failed to decode ImagesResponse: \(error.localizedDescription). Data: \(String(data: data, encoding: .utf8) ?? "non-utf8 data")")
                     completion(.failure(.unexpectedResponse))
                 }
             case .failure(let error):
@@ -458,16 +496,11 @@ class NetworkManager {
             switch result {
             case .success(let data):
                 do {
-                    if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let newTotalCredits = jsonResponse["newTotalCredits"] as? Int {
-                        print("NetworkManager: Successfully added credits. New total: \(newTotalCredits)")
-                        completion(.success(newTotalCredits))
-                    } else {
-                        print("NetworkManager: Failed to parse newTotalCredits from response.")
-                        completion(.failure(.unexpectedResponse))
-                    }
+                    let addCreditsResponse = try self.jsonDecoder.decode(AddCreditsResponse.self, from: data)
+                    print("NetworkManager: Successfully added credits. New total from userInfo: \(addCreditsResponse.userInfo.credits)")
+                    completion(.success(addCreditsResponse.userInfo.credits))
                 } catch {
-                    print("NetworkManager: Failed to decode addCredits response: \(error)")
+                    print("NetworkManager: Failed to decode AddCreditsResponse: \(error.localizedDescription). Data: \(String(data: data, encoding: .utf8) ?? "non-utf8 data")")
                     completion(.failure(.unexpectedResponse))
                 }
             case .failure(let error):
@@ -476,6 +509,34 @@ class NetworkManager {
             }
         }
     }
+
+    // MARK: <<< ADDED START >>>
+    // Helper function to attempt to extract UserInfo from any data and update UserManager
+    private static func tryExtractAndUpdateUserCredits(from data: Data?) {
+        guard let data = data else { return }
+
+        // Try to deserialize into a generic [String: Any] to look for "userInfo"
+        guard let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+              let userInfoDict = json["userInfo"] as? [String: Any] else {
+            // print("NetworkManagerHelper: No 'userInfo' key found at top level or data not JSON dict.")
+            return
+        }
+
+        // Try to convert userInfoDict back to Data, then decode UserInfo struct
+        guard let userInfoData = try? JSONSerialization.data(withJSONObject: userInfoDict, options: []) else {
+            // print("NetworkManagerHelper: Could not re-serialize userInfo dictionary to Data.")
+            return
+        }
+
+        do {
+            let decodedUserInfo = try self.jsonDecoder.decode(UserInfo.self, from: userInfoData)
+            print("NetworkManagerHelper: Parsed UserInfo. Credits: \(decodedUserInfo.credits) for User: \(decodedUserInfo.appleUserId)")
+            UserManager.shared.updateUserCredits(credits: decodedUserInfo.credits)
+        } catch {
+            // print("NetworkManagerHelper: Failed to decode UserInfo from userInfo dict: \(error.localizedDescription)")
+        }
+    }
+    // MARK: <<< ADDED END >>>
 }
 
 extension DateFormatter {

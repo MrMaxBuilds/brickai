@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
+import { UserInfo } from '@/user/types';
 
 // --- Environment Variable List ---
 const requiredEnvVars = [
@@ -117,7 +118,14 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`${routeName}: Successfully added ${creditsToAdd} credits to user ${appleUserId}. New total: ${newCreditTotal}`);
-    return NextResponse.json({ message: 'Credits added successfully.', newTotalCredits: newCreditTotal }, { status: 200 });
+    const userInfo: UserInfo = {
+      appleUserId: appleUserId,
+      credits: newCreditTotal
+    };
+    return NextResponse.json({
+      message: 'Credits added successfully.',
+      userInfo: userInfo
+    }, { status: 200 });
   } catch (err: unknown) {
     console.error(`${routeName}: Unhandled error in POST handler:`, err instanceof Error ? err.message : 'Unknown error');
     return NextResponse.json({ error: 'An unexpected internal server error occurred.' }, { status: 500 });

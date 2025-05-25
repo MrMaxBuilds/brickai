@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { createClient } from "@supabase/supabase-js";
+import { UserInfo } from "@/user/types";
 
 // --- Environment Variable Check (remains the same) ---
 const requiredEnvVars = [
@@ -117,6 +118,26 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false },
     });
 
+    // --- 2.5 Fetch User Credits --- ADDED STEP
+    console.log(`Images Route: Fetching credits for user ${appleUserId}`);
+    const { data: userData, error: userFetchError } = await supabase
+      .from("users")
+      .select("usage_credits")
+      .eq("apple_user_id", appleUserId)
+      .single();
+
+    if (userFetchError) {
+      console.error(`Images Route: Error fetching user ${appleUserId} for credit count:`, userFetchError);
+      return NextResponse.json({ error: "Error fetching user data." }, { status: 500 });
+    }
+    if (!userData) {
+      console.warn(`Images Route: User ${appleUserId} not found when fetching credits.`);
+      // Consider if this should be a 404 or if image fetching should proceed with 0 credits for userInfo
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+    const userCredits = userData.usage_credits;
+    console.log(`Images Route: User ${appleUserId} has ${userCredits} credits.`);
+
     // --- 3. Fetch Image Records from Database ---
     console.log(`Images Route: Fetching images for user: ${appleUserId}`);
     // Select specific columns including the SERIAL 'id'
@@ -162,7 +183,11 @@ export async function GET(req: NextRequest) {
     console.log(
       `Images Route: Returning ${responseImages.length} images for user ${appleUserId}.`
     );
-    return NextResponse.json(responseImages);
+    const userInfo: UserInfo = {
+        appleUserId: appleUserId,
+        credits: userCredits
+    };
+    return NextResponse.json({ images: responseImages, userInfo: userInfo });
   } catch (err: unknown) {
     // Use 'unknown'
     console.error("Images Route: Unhandled Error:", err);

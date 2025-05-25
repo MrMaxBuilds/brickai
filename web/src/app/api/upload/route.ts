@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { UserInfo } from '@/user/types';
 
 // --- Environment Variable List ---
 const requiredEnvVars = [
@@ -301,15 +302,29 @@ export async function POST(req: NextRequest) {
 
         if (userError) {
             console.error(`Upload Route: Error fetching user ${appleUserId} for credit check:`, userError);
-            return NextResponse.json({ error: 'Error verifying user status.' }, { status: 500 });
+            // Attempt to include userInfo even in this error case, though credits might be unknown/stale
+            const userInfo: UserInfo = {
+                appleUserId: appleUserId,
+                credits: -1 // Indicate unknown/error in fetching credits
+            };
+            return NextResponse.json({ error: 'Error verifying user status.', userInfo: userInfo }, { status: 500 });
         }
         if (!userData) {
             console.warn(`Upload Route: User ${appleUserId} not found during credit check.`);
-            return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+            // User not found, appleUserId is known, credits are effectively 0 for this non-existent user
+            const userInfo: UserInfo = {
+                appleUserId: appleUserId,
+                credits: 0
+            };
+            return NextResponse.json({ error: 'User not found.', userInfo: userInfo }, { status: 404 });
         }
         if (userData.usage_credits <= 0) {
             console.log(`Upload Route: User ${appleUserId} has insufficient credits (${userData.usage_credits}).`);
-            return NextResponse.json({ error: 'Insufficient credits. Please purchase more.' }, { status: 402 });
+            const userInfo: UserInfo = { // Added userInfo to this response
+                appleUserId: appleUserId,
+                credits: userData.usage_credits
+            };
+            return NextResponse.json({ error: 'Insufficient credits. Please purchase more.', userInfo: userInfo }, { status: 402 });
         }
         console.log(`Upload Route: User ${appleUserId} has ${userData.usage_credits} credits. Proceeding.`);
 
@@ -358,10 +373,11 @@ export async function POST(req: NextRequest) {
          console.log(`Upload Route: Synchronous stream processing and update function finished. Success: ${processingSuccessful}`);
 
         // --- 5.5. Decrement Credits on Success --- ADDED STEP
+        let updatedCredits: number = userData.usage_credits; // Initialize with credits before decrement
+
         if (processingSuccessful) {
             console.log(`Upload Route: Processing successful for image ID ${imageId}. Attempting to decrement credits for user ${appleUserId} via direct update.`);
             
-            // Fetch current credits first to mitigate some staleness, though a small race condition window remains.
             const { data: currentUserData, error: fetchError } = await supabase
                 .from('users')
                 .select('usage_credits')
@@ -370,10 +386,11 @@ export async function POST(req: NextRequest) {
 
             if (fetchError) {
                 console.error(`Upload Route: CRITICAL - Failed to fetch user ${appleUserId} before decrementing credits:`, fetchError);
-                // Do not fail the request for the user, as they got their image.
-                // Log this as a high-priority issue.
+                // Use potentially stale credit count if fetch fails before decrement
+                updatedCredits = userData.usage_credits; 
             } else if (!currentUserData) {
                 console.error(`Upload Route: CRITICAL - User ${appleUserId} not found before attempting credit decrement.`);
+                updatedCredits = 0; // Or handle as error, but for safety set to 0
             } else if (currentUserData.usage_credits > 0) {
                 const { error: decrementError } = await supabase
                     .from('users')
@@ -382,22 +399,40 @@ export async function POST(req: NextRequest) {
 
                 if (decrementError) {
                     console.error(`Upload Route: CRITICAL - Failed to decrement credits for user ${appleUserId} after successful image processing:`, decrementError);
-                    // Log this as a high-priority issue.
+                    updatedCredits = currentUserData.usage_credits; // Decrement failed, use pre-decrement value
                 } else {
                     console.log(`Upload Route: Successfully decremented credits for user ${appleUserId}. New count (local view): ${currentUserData.usage_credits - 1}`);
+                    updatedCredits = currentUserData.usage_credits - 1;
                 }
             } else {
                  console.log(`Upload Route: User ${appleUserId} had 0 or fewer credits (${currentUserData.usage_credits}) before attempted decrement. No decrement performed.`);
+                 updatedCredits = currentUserData.usage_credits; // No decrement, use current value
             }
         } else {
             console.log(`Upload Route: Processing was not successful for image ID ${imageId}. Credits not decremented for user ${appleUserId}.`);
+            // Fetch current credits if processing failed
+            const { data: finalUserData, error: finalUserError } = await supabase
+                .from('users')
+                .select('usage_credits')
+                .eq('apple_user_id', appleUserId)
+                .single();
+            if (finalUserError || !finalUserData) {
+                console.error(`Upload Route: Error fetching user ${appleUserId} for final credit count:`, finalUserError);
+                updatedCredits = userData.usage_credits; // Fallback to initial credits if fetch fails
+            } else {
+                updatedCredits = finalUserData.usage_credits;
+            }
         }
 
         // --- 6. Construct and Return Response to Client ---
-        // The response indicates acceptance; client needs to check status via /images endpoint
+        const userInfo: UserInfo = {
+            appleUserId: appleUserId,
+            credits: updatedCredits
+        };
         return NextResponse.json({
-            message: 'Image upload accepted, processing attempted via stream.', // Updated message
-            url: originalImageUrl // Return original URL
+            message: 'Image upload accepted, processing attempted via stream.',
+            url: originalImageUrl,
+            userInfo: userInfo
         });
 
     } catch (err: unknown) {

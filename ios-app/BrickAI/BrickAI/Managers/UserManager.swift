@@ -11,13 +11,15 @@ class UserManager: ObservableObject {
     @Published private(set) var userName: String?
     @Published private(set) var userIdentifier: String?
     @Published private(set) var isLoggedIn: Bool = false
+    @Published private(set) var userCredits: Int?
 
     private init() {
         self.userIdentifier = KeychainService.loadString(forKey: kKeychainAccountUserIdentifier)
         self.userName = KeychainService.loadString(forKey: kKeychainAccountUserName)
         let sessionToken = KeychainService.loadString(forKey: kKeychainAccountSessionToken)
         self.isLoggedIn = (self.userIdentifier != nil && !self.userIdentifier!.isEmpty && sessionToken != nil && !sessionToken!.isEmpty)
-        print("UserManager Initialized. UserIdentifier loaded: \(self.userIdentifier != nil), UserName loaded: \(self.userName != nil), SessionToken loaded: \(sessionToken != nil). Determined isLoggedIn: \(self.isLoggedIn)")
+        self.userCredits = nil
+        print("UserManager Initialized. UserIdentifier loaded: \(self.userIdentifier != nil), UserName loaded: \(self.userName != nil), SessionToken loaded: \(sessionToken != nil). Determined isLoggedIn: \(self.isLoggedIn), Credits: \(self.userCredits == nil ? "nil" : String(self.userCredits!))")
     }
 
     // Save initial credentials and session token
@@ -31,25 +33,11 @@ class UserManager: ObservableObject {
             }
             try KeychainService.saveString(sessionToken, forKey: kKeychainAccountSessionToken)
 
-            // MARK: <<< REMOVED START >>>
-            // let wasAlreadyLoggedIn = self.isLoggedIn // No longer needed here
-            // MARK: <<< REMOVED END >>>
-
             DispatchQueue.main.async {
                 self.userIdentifier = userIdentifier
                 self.userName = userName
                 self.isLoggedIn = true
                 print("UserManager: Credentials and session token saved successfully. isLoggedIn set to true.")
-
-                // MARK: <<< REMOVED START >>>
-                // Remove trigger from saveCredentials
-                /*
-                 if !wasAlreadyLoggedIn {
-                      print("UserManager: Login successful. Triggering image data preparation.")
-                      self.imageDataManager.prepareImageData()
-                 }
-                */
-                 // MARK: <<< REMOVED END >>>
             }
         } catch {
             print("UserManager: Failed to save credentials/session token to Keychain: \(error.localizedDescription)")
@@ -59,7 +47,6 @@ class UserManager: ObservableObject {
 
     // Retrieve the current backend session token (Unchanged)
     func getSessionToken() -> String? {
-        // ... (no changes needed here) ...
         do {
             guard let tokenString = KeychainService.loadString(forKey: kKeychainAccountSessionToken) else {
                 throw KeychainError.itemNotFound
@@ -76,7 +63,6 @@ class UserManager: ObservableObject {
 
     // Update only the session token after a refresh (Unchanged)
     func updateSessionToken(newToken: String) {
-        // ... (no changes needed here) ...
         do {
             try KeychainService.saveString(newToken, forKey: kKeychainAccountSessionToken)
             print("UserManager: Session token updated successfully in Keychain.")
@@ -85,15 +71,6 @@ class UserManager: ObservableObject {
                     self.userIdentifier = KeychainService.loadString(forKey: kKeychainAccountUserIdentifier)
                     self.isLoggedIn = (self.userIdentifier != nil && !self.userIdentifier!.isEmpty)
                     print("UserManager: Warning - isLoggedIn was false during token update. Resetting based on user ID presence.")
-                     // MARK: <<< REMOVED START >>>
-                     // Remove trigger from updateSessionToken
-                     /*
-                     if self.isLoggedIn {
-                          print("UserManager: Became logged in during token update. Triggering image data prep.")
-                           self.imageDataManager.prepareImageData()
-                     }
-                    */
-                    // MARK: <<< REMOVED END >>>
                 }
             }
         } catch {
@@ -103,18 +80,15 @@ class UserManager: ObservableObject {
 
     // Clear user data and session token
     func clearUser() {
-        // Use try? for non-critical deletions
         try? KeychainService.deleteData(forKey: kKeychainAccountUserIdentifier)
         try? KeychainService.deleteData(forKey: kKeychainAccountSessionToken)
         try? KeychainService.deleteData(forKey: kKeychainAccountUserName)
 
         DispatchQueue.main.async {
-            // MARK: <<< REMOVED START >>>
-            // let wasLoggedIn = self.isLoggedIn // No longer needed here
-            // MARK: <<< REMOVED END >>>
             self.userIdentifier = nil
             self.userName = nil
             self.isLoggedIn = false
+            self.userCredits = nil
             print("UserManager: User data and session token cleared from Keychain and state updated. isLoggedIn set to false.")
         }
     }
@@ -136,6 +110,14 @@ class UserManager: ObservableObject {
                     completion(.failure(error))
                 }
             }
+        }
+    }
+
+    // Function to update user credits
+    func updateUserCredits(credits: Int) {
+        DispatchQueue.main.async {
+            self.userCredits = credits
+            print("UserManager: User credits updated to \(credits)")
         }
     }
 }
