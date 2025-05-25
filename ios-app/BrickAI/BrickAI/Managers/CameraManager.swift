@@ -11,6 +11,7 @@ class CameraManager: ObservableObject {
     @Published var capturedImage: UIImage? // Holds the image after capture
     @Published private(set) var isPermissionGranted: Bool = false // Camera permission state
     @Published private(set) var currentCameraPosition: AVCaptureDevice.Position = .back
+    @Published private(set) var isFrontCameraActive: Bool = false // Added to track if front camera is active
 
     // --- Private Properties ---
     private var videoDeviceInput: AVCaptureDeviceInput?
@@ -258,6 +259,7 @@ class CameraManager: ObservableObject {
               // Update the published state on the main thread
               DispatchQueue.main.async {
                    self.currentCameraPosition = desiredPosition
+                   self.isFrontCameraActive = (desiredPosition == .front) // Update based on new position
               }
               print("CameraManager: Successfully switched camera to \(desiredPosition).")
          } else {

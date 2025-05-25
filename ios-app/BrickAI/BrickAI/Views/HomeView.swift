@@ -38,7 +38,8 @@ struct HomeView: View {
                       // --- Camera Granted Flow ---
                       if let capturedImage = cameraManager.capturedImage {
                           // --- Show Captured Image View ---
-                           CapturedImageView(image: capturedImage)
+                           CapturedImageView(image: capturedImage,
+                                             isSelfie: cameraManager.isFrontCameraActive)
                                .environmentObject(imageDataManager) // Pass manager down
                                .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .identity))
                       } else {
