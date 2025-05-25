@@ -58,7 +58,7 @@ struct ImageRow: View {
             VStack(alignment: .leading, spacing: 4) { // Text details remain the same
                 Text("Status: \(image.status.capitalized)")
                     .font(.headline).foregroundColor(statusColor(status: image.status))
-                 Text(image.createdAt, style: .relative)
+                 Text(image.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption).foregroundColor(.gray)
             }
 
