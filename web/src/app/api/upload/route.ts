@@ -9,6 +9,8 @@ import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getUserCredits, modifyCredits } from '@/user/utils';
+import fs from 'fs';
+import path from 'path';
 
 // --- Environment Variable List ---
 const requiredEnvVars = [
@@ -35,7 +37,8 @@ async function processImageAndLogStream(
 ): Promise<boolean> {
     const processingApiUrl = 'https://api.piapi.ai/v1/chat/completions';
     // Use lots of detailed colors and try to keep their features intact. 
-    const defaultPrompt = "Turn this person or people into lego figurine people! It should be the scale of regular humans but a lego figurine in the style of the lego movie. Make the men more muscular and the women more curvy and beautiful."
+    const defaultPromptPath = path.resolve('./src/app/api/upload/defaultPrompt.txt');
+    const defaultPrompt = fs.readFileSync(defaultPromptPath, 'utf-8');
     let success = false;
     let fullContentString = ''; // Accumulator for the content fragments
     let processingError: Error | null = null; // Store error during processing
