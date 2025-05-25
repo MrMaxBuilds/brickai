@@ -8,6 +8,7 @@ import StoreKit // Import StoreKit
 struct PaymentsView: View {
     // EnvironmentObject to access the shared StoreManager instance
     @EnvironmentObject var storeManager: StoreManager
+    @Environment(\.dismiss) var dismiss
     
     // State for managing alerts
     @State private var showAlert = false
@@ -65,7 +66,15 @@ struct PaymentsView: View {
             }
         }
         .alert(isPresented: $showAlert) {
-            Alert(title: Text(alertTitle), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+            Alert(
+                title: Text(alertTitle),
+                message: Text(alertMessage),
+                dismissButton: .default(Text("OK")) {
+                    if alertTitle == "Purchase Successful" {
+                        dismiss()
+                    }
+                }
+            )
         }
     }
 
@@ -125,41 +134,38 @@ struct PaymentsView: View {
 
     /// Handles the completion of a purchase attempt.
     private func handlePurchaseCompletion(result: Result<SKPaymentTransaction, Error>, product: SKProduct) {
-        switch result {
-        case .success(let transaction):
-            // Purchase was successful
-            print("PaymentsView: Purchase successful for \(product.localizedTitle)!")
-            alertTitle = "Purchase Successful"
-            alertMessage = "You've successfully purchased \(product.localizedTitle)."
-            showAlert = true
+        DispatchQueue.main.async {
+            switch result {
+            case .success(let transaction):
+                // Purchase was successful
+                print("PaymentsView: Purchase successful for \(product.localizedTitle)!")
+                self.alertTitle = "Purchase Successful"
+                self.alertMessage = "You've successfully purchased \(product.localizedTitle)."
+                self.showAlert = true
             
-            // --- IMPORTANT: Grant Content ---
-            // The StoreManager's handlePurchased method is the primary place for this.
-            // If you need to update UI specifically in PaymentsView or trigger navigation,
-            // you can do it here. For example, you might want to update a local "tries" display
-            // if it were managed directly in this view, or pop the view.
-            //
-            // Example: If UserManager.shared.addTries(30) was called in StoreManager,
-            // the user's state is updated. You might want to reflect that here or navigate away.
-            // For now, we just show an alert.
-            //
-            // The HomeView's lightning icon count needs to be updated.
-            // This will require making the "tries" count an observable property,
-            // likely in UserManager or a dedicated service, and having StoreManager update it.
-            // I will make a note for you to implement this update.
+                // --- IMPORTANT: Grant Content ---
+                // The StoreManager's handlePurchased method is the primary place for this.
+                // If you need to update UI specifically in PaymentsView or trigger navigation,
+                // you can do it here. For example, you might want to update a local "tries" display
+                // if it were managed directly in this view, or pop the view.
+                //
+                // Example: If UserManager.shared.addTries(30) was called in StoreManager,
+                // the user's state is updated. You might want to reflect that here or navigate away.
+                // For now, we just show an alert and dismiss on OK.
 
-        case .failure(let error):
-            // Purchase failed
-            print("PaymentsView: Purchase failed for \(product.localizedTitle). Error: \(error.localizedDescription)")
-            if let skError = error as? SKError, skError.code == .paymentCancelled {
-                // User cancelled, no alert needed or a subtle one
-                alertTitle = "Purchase Cancelled"
-                alertMessage = "Your purchase of \(product.localizedTitle) was cancelled."
-            } else {
-                alertTitle = "Purchase Failed"
-                alertMessage = "Could not complete your purchase of \(product.localizedTitle). \(error.localizedDescription)"
+            case .failure(let error):
+                // Purchase failed
+                print("PaymentsView: Purchase failed for \(product.localizedTitle). Error: \(error.localizedDescription)")
+                if let skError = error as? SKError, skError.code == .paymentCancelled {
+                    // User cancelled, no alert needed or a subtle one
+                    self.alertTitle = "Purchase Cancelled"
+                    self.alertMessage = "Your purchase of \(product.localizedTitle) was cancelled."
+                } else {
+                    self.alertTitle = "Purchase Failed"
+                    self.alertMessage = "Could not complete your purchase of \(product.localizedTitle). \(error.localizedDescription)"
+                }
+                self.showAlert = true
             }
-            showAlert = true
         }
     }
     

@@ -26,6 +26,7 @@ struct HomeView: View {
     // State to manage photo selection from library
     @State private var photoPickerItem: PhotosPickerItem?
     @State private var showPhotoPicker = false
+    @State private var showPaymentsSheet = false // <<< ADDED: State for presenting PaymentsView as a sheet
 
 
     var body: some View {
@@ -165,18 +166,21 @@ struct HomeView: View {
                             // <-----CHANGE START------>
                             // --- Top Left: Usages/Payments Icon ---
                             .overlay(alignment: .topLeading) {
-                                NavigationLink(destination: PaymentsView()) {
+                                // Changed NavigationLink to Button to present as a sheet
+                                Button(action: {
+                                    showPaymentsSheet = true // Set state to true to show the sheet
+                                }) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "bolt.fill")
                                             .foregroundColor(.blue)
-                                        Text("\(userManager.userCredits ?? -1)")
+                                        Text("\(userManager.userCredits ?? -1)") // Display -1 if nil, for debugging or placeholder
                                             .font(.callout)
                                             .fontWeight(.medium)
-                                            .foregroundColor(.primary) // Or .blue if preferred
+                                            .foregroundColor(.primary)
                                     }
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(Color(.white).opacity(0.5)) // Lighter gray with adjusted opacity
+                                    .background(Color(.white).opacity(0.5))
                                     .cornerRadius(20) // Capsule shape
                                 }
                                 .padding([.top, .leading], 16)
@@ -270,6 +274,11 @@ struct HomeView: View {
                        }
                        // The .onAppear modifier of the popup itself handles the timer to hide it.
                    }
+              }
+              // --- Sheet for PaymentsView ---
+              .sheet(isPresented: $showPaymentsSheet) { // <<< ADDED: Sheet modifier
+                  PaymentsView()
+                    // PaymentsView will inherit necessary EnvironmentObjects like storeManager and userManager
               }
          } // End NavigationStack
     } // End body

@@ -17,11 +17,17 @@ struct CapturedImageView: View {
     @StateObject private var cameraManager = CameraManager.shared
     // Access ImageDataManager to add to pending queue and update success time
     @EnvironmentObject var imageDataManager: ImageDataManager
+    // Access UserManager to check for credits
+    @EnvironmentObject var userManager: UserManager
 
     // State variables for upload progress/status are no longer needed in this view
     // @State private var isUploading = false // REMOVED
     // @State private var uploadError: String? = nil // REMOVED
     // @State private var uploadSuccessURL: String? = nil // REMOVED
+
+    // State variables for credit check and navigation to PaymentsView
+    @State private var showInsufficientCreditsAlert = false
+    @State private var presentPaymentsView = false
 
     var body: some View {
         ZStack {
@@ -58,6 +64,15 @@ struct CapturedImageView: View {
                  HStack(spacing: 60) {
                      Spacer()
                      Button(action: {
+                         // Check for sufficient credits BEFORE any other action
+                         guard let credits = userManager.userCredits, credits > 0 else {
+                             print("CapturedImageView: Insufficient credits (\(userManager.userCredits ?? 0)). Showing alert.")
+                             self.showInsufficientCreditsAlert = true
+                             return // Stop further processing
+                         }
+                         
+                         // If credits are sufficient, proceed with upload logic:
+
                          // 0. Add to pending queue BEFORE dismissing/uploading
                          print("CapturedImageView: Adding image to pending queue.")
                          imageDataManager.addImageToPendingQueue()
@@ -128,6 +143,21 @@ struct CapturedImageView: View {
          .onAppear {
               // Ensure status messages were cleared (though they are removed now)
               print("CapturedImageView: Appeared.")
+         }
+         // Alert for insufficient credits
+         .alert("Insufficient Credits", isPresented: $showInsufficientCreditsAlert) {
+             Button("Purchase Credits") {
+                 self.presentPaymentsView = true
+             }
+             Button("Cancel", role: .cancel) {}
+         } message: {
+             Text("You don't have enough credits to upload an image. Please purchase more to continue.")
+         }
+         // Sheet to present PaymentsView
+         .sheet(isPresented: $presentPaymentsView) {
+             // Ensure PaymentsView gets its necessary environment objects if any
+             // (it will inherit from CapturedImageView's environment)
+             PaymentsView()
          }
     }
     
