@@ -60,11 +60,14 @@ struct CapturedImageView: View {
                  HStack(spacing: 60) {
                      Spacer()
                      Button(action: handleConfirmAction) {
-                         // Button content is now static - always show checkmark as we dismiss immediately
-                         Image(systemName: "checkmark.circle.fill")
-                             .font(.system(size: 64))
+                         Text("Create!")
+                             .font(.system(size: 24, weight: .bold))
                              .foregroundColor(.white)
-                             .shadow(radius: 3)
+                             .padding(.horizontal, 40)
+                             .padding(.vertical, 15)
+                             .background(Color.blue)
+                             .cornerRadius(30)
+                             .shadow(radius: 5)
                      }
                      // Button is never disabled as action is now instantaneous
                      Spacer()
