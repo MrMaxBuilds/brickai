@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { UserInfo } from '@/user/types';
+import { getUserCredits, modifyCredits } from '@/user/utils';
 
 // --- Environment Variable List ---
 const requiredEnvVars = [
@@ -32,7 +32,7 @@ async function processImageAndLogStream(
     awsS3BucketName: string,
     awsRegion: string,
     piApiKey: string
-): Promise<boolean> { // MODIFIED: Returns boolean for success
+): Promise<boolean> {
     const processingApiUrl = 'https://api.piapi.ai/v1/chat/completions';
     // Use lots of detailed colors and try to keep their features intact. 
     const defaultPrompt = "Turn this person or people into lego people! It should be the scale of regular humans but built in lego"
@@ -247,24 +247,27 @@ async function processImageAndLogStream(
 
 // --- Main POST Handler ---
 export async function POST(req: NextRequest) {
-    let appleUserId: string;
+    const routeName = "Upload Route";
+    let appleUserId: string = "unknown_user";
     let imageId: number | string | null = null;
     let originalImageUrl: string | null = null;
+    let initialCredits = -1;
+    let creditsDecremented = false;
 
     // --- Use Imported Environment Variable Check ---
-    const envCheck = checkEnvVars(requiredEnvVars, 'Upload Route');
+    const envCheck = checkEnvVars(requiredEnvVars, routeName);
     if (!envCheck.valid) {
-        return NextResponse.json({ error: `Internal Server Configuration Error: Missing env var: ${envCheck.missing}` }, { status: 500 });
+        return NextResponse.json({ error: `Internal Server Configuration Error: Missing env var: ${envCheck.missing}`, userInfo: { appleUserId, credits: -1 } }, { status: 500 });
     }
     // Retrieve validated environment variables
-    const backendJwtSecret = process.env.BACKEND_JWT_SECRET as string;
-    const supabaseUrl = process.env.SUPABASE_URL as string;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
-    const awsRegion = process.env.AWS_REGION as string;
-    const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID as string;
-    const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY as string;
-    const awsS3BucketName = process.env.AWS_S3_BUCKET_NAME as string;
-    const piApiKey = process.env.PIAPI_API_KEY as string;
+    const backendJwtSecret = process.env.BACKEND_JWT_SECRET!;
+    const supabaseUrl = process.env.SUPABASE_URL!;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const awsRegion = process.env.AWS_REGION!;
+    const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID!;
+    const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY!;
+    const awsS3BucketName = process.env.AWS_S3_BUCKET_NAME!;
+    const piApiKey = process.env.PIAPI_API_KEY!;
 
     // Initialize S3 Client
     const s3Client = new S3Client({
@@ -279,63 +282,60 @@ export async function POST(req: NextRequest) {
     try {
         // --- 1. Verify Backend Session Token ---
         const authHeader = req.headers.get('authorization');
-        if (!authHeader || !authHeader.startsWith('Bearer ')) { return NextResponse.json({ error: 'Unauthorized: Missing or invalid Authorization header.' }, { status: 401 }); }
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return NextResponse.json({ error: 'Unauthorized: Missing or invalid Authorization header.', userInfo: { appleUserId: "unknown_user", credits: -1 } }, { status: 401 });
+        }
         const sessionToken = authHeader.substring(7);
         try {
-            const decoded = jwt.verify(sessionToken, backendJwtSecret, { algorithms: ['HS256'], issuer: 'BrickAIBackend' });
-            if (typeof decoded === 'object' && decoded !== null && typeof decoded.sub === 'string') { appleUserId = decoded.sub; }
-            else { throw new Error('Invalid token payload structure or missing/invalid sub claim.'); }
-            console.log(`Upload Route: Verified session token for Apple User ID (sub): ${appleUserId}`);
-        } catch (err: unknown) {
-             console.error('Upload Route: Backend Session Token Verification Error:', err instanceof Error ? err.message : 'Unknown error');
-            let errorMessage = 'Unauthorized: Invalid session token.'; if (err instanceof Error && err.name === 'TokenExpiredError') { errorMessage = 'Unauthorized: Session has expired.'; }
-             return NextResponse.json({ error: errorMessage }, { status: 401 });
+            const decoded = jwt.verify(sessionToken, backendJwtSecret, { algorithms: ['HS256'], issuer: 'BrickAIBackend' }) as jwt.JwtPayload;
+            if (decoded && typeof decoded.sub === 'string') { 
+                appleUserId = decoded.sub;
+            } else { 
+                throw new Error('Invalid token payload.'); 
+            }
+        } catch {
+            return NextResponse.json({ error: 'Unauthorized: Invalid session token.', userInfo: { appleUserId, credits: -1 } }, { status: 401 });
         }
 
         // --- 1.5. Check User Credits --- ADDED STEP
         console.log(`Upload Route: Checking credits for user ${appleUserId}`);
-        const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('usage_credits')
-            .eq('apple_user_id', appleUserId)
-            .single();
+        const creditsCheck = await getUserCredits(supabase, appleUserId);
+        if (creditsCheck.error || !creditsCheck.data) {
+            const errorMsg = creditsCheck.error?.message || "User not found or error fetching credits.";
+            const status = creditsCheck.error?.code === 'PGRST116' || !creditsCheck.data ? 404 : 500;
+            return NextResponse.json({ error: errorMsg, userInfo: { appleUserId, credits: creditsCheck.data?.credits ?? 0} }, { status });
+        }
+        initialCredits = creditsCheck.data.credits;
+        if (initialCredits <= 0) {
+            console.log(`Upload Route: User ${appleUserId} has insufficient credits (${initialCredits}).`);
+            return NextResponse.json({ error: 'Insufficient credits. Please purchase more.', userInfo: creditsCheck.data }, { status: 402 });
+        }
+        console.log(`Upload Route: User ${appleUserId} has ${initialCredits} credits. Proceeding.`);
 
-        if (userError) {
-            console.error(`Upload Route: Error fetching user ${appleUserId} for credit check:`, userError);
-            // Attempt to include userInfo even in this error case, though credits might be unknown/stale
-            const userInfo: UserInfo = {
-                appleUserId: appleUserId,
-                credits: -1 // Indicate unknown/error in fetching credits
-            };
-            return NextResponse.json({ error: 'Error verifying user status.', userInfo: userInfo }, { status: 500 });
+        // --- 2. Attempt to decrement credits
+        console.log(`${routeName}: User ${appleUserId} has ${initialCredits} credits. Attempting to decrement.`);
+        const decrementResult = await modifyCredits(supabase, appleUserId, -1);
+        if (decrementResult.error || !decrementResult.data) {
+            console.error(`${routeName}: Failed to decrement credits for user ${appleUserId}:`, decrementResult.error);
+            // Return error, user was not charged. Use initial credits for userInfo.
+            return NextResponse.json({ error: 'Failed to process charge.', userInfo: { appleUserId, credits: initialCredits } }, { status: 500 });
         }
-        if (!userData) {
-            console.warn(`Upload Route: User ${appleUserId} not found during credit check.`);
-            // User not found, appleUserId is known, credits are effectively 0 for this non-existent user
-            const userInfo: UserInfo = {
-                appleUserId: appleUserId,
-                credits: 0
-            };
-            return NextResponse.json({ error: 'User not found.', userInfo: userInfo }, { status: 404 });
-        }
-        if (userData.usage_credits <= 0) {
-            console.log(`Upload Route: User ${appleUserId} has insufficient credits (${userData.usage_credits}).`);
-            const userInfo: UserInfo = { // Added userInfo to this response
-                appleUserId: appleUserId,
-                credits: userData.usage_credits
-            };
-            return NextResponse.json({ error: 'Insufficient credits. Please purchase more.', userInfo: userInfo }, { status: 402 });
-        }
-        console.log(`Upload Route: User ${appleUserId} has ${userData.usage_credits} credits. Proceeding.`);
+        creditsDecremented = true;
+        const currentCreditsInResponse = decrementResult.data.credits;
+        console.log(`${routeName}: Credits successfully decremented for user ${appleUserId}. New balance: ${currentCreditsInResponse}`);
 
-        // --- 2. Process Image Upload (Get image data) ---
+        // --- 3. Process Image Upload (Get image data) ---
         const contentType = req.headers.get('content-type');
-        if (!contentType || !contentType.startsWith('image/')) { return NextResponse.json({ error: 'Invalid Content-Type. Must be an image type.' }, { status: 400 }); }
+        if (!contentType || !contentType.startsWith('image/')) {
+            throw new Error('Invalid Content-Type. Must be an image type.');
+        }
         const buffer = await req.arrayBuffer();
-        if (!buffer || buffer.byteLength === 0) { return NextResponse.json({ error: 'No image data received in request body' }, { status: 400 }); }
+        if (!buffer || buffer.byteLength === 0) {
+            throw new Error('No image data received in request body');
+        }
         const body = Buffer.from(buffer);
 
-        // --- 3. Upload Original Image to S3 ---
+        // --- 4. Upload Original Image to S3 ---
         // (Code unchanged, uses utils)
         const fileExtension = getExtensionFromContentType(contentType);
         const s3Key = `images/${appleUserId}/${uuidv4()}.${fileExtension}`;
@@ -349,7 +349,7 @@ export async function POST(req: NextRequest) {
              return NextResponse.json({ error: 'Failed to construct S3 URL after upload.' }, { status: 500 });
         }
 
-        // --- 4. Save Initial Metadata to Supabase & Get ID ---
+        // --- 5. Save Initial Metadata to Supabase & Get ID ---
         // (Code unchanged)
         console.log(`Upload Route: Saving initial image metadata to Supabase for user ${appleUserId}`);
         const { data: insertedData, error: dbError } = await supabase.from('images').insert({ apple_user_id: appleUserId, original_s3_key: s3Key, status: 'UPLOADED' }).select('id').single();
@@ -358,9 +358,9 @@ export async function POST(req: NextRequest) {
         imageId = insertedData.id;
         console.log(`Upload Route: Successfully saved metadata to Supabase. Image ID: ${imageId}`);
 
-        // --- 5. Trigger Image Stream Processing and Update (Synchronous Call) ---
+        // --- 6. Trigger Image Stream Processing and Update (Synchronous Call) ---
         console.log("Upload Route: Triggering synchronous image stream processing, accumulation, and update attempt...");
-        const processingSuccessful = await processImageAndLogStream( // MODIFIED: Capture result
+        const processingSuccessful = await processImageAndLogStream(
             supabase,
             s3Client,
             imageId || 0,
@@ -372,79 +372,64 @@ export async function POST(req: NextRequest) {
         );
          console.log(`Upload Route: Synchronous stream processing and update function finished. Success: ${processingSuccessful}`);
 
-        // --- 5.5. Decrement Credits on Success --- ADDED STEP
-        let updatedCredits: number = userData.usage_credits; // Initialize with credits before decrement
-
-        if (processingSuccessful) {
-            console.log(`Upload Route: Processing successful for image ID ${imageId}. Attempting to decrement credits for user ${appleUserId} via direct update.`);
-            
-            const { data: currentUserData, error: fetchError } = await supabase
-                .from('users')
-                .select('usage_credits')
-                .eq('apple_user_id', appleUserId)
-                .single();
-
-            if (fetchError) {
-                console.error(`Upload Route: CRITICAL - Failed to fetch user ${appleUserId} before decrementing credits:`, fetchError);
-                // Use potentially stale credit count if fetch fails before decrement
-                updatedCredits = userData.usage_credits; 
-            } else if (!currentUserData) {
-                console.error(`Upload Route: CRITICAL - User ${appleUserId} not found before attempting credit decrement.`);
-                updatedCredits = 0; // Or handle as error, but for safety set to 0
-            } else if (currentUserData.usage_credits > 0) {
-                const { error: decrementError } = await supabase
-                    .from('users')
-                    .update({ usage_credits: currentUserData.usage_credits - 1 })
-                    .eq('apple_user_id', appleUserId);
-
-                if (decrementError) {
-                    console.error(`Upload Route: CRITICAL - Failed to decrement credits for user ${appleUserId} after successful image processing:`, decrementError);
-                    updatedCredits = currentUserData.usage_credits; // Decrement failed, use pre-decrement value
-                } else {
-                    console.log(`Upload Route: Successfully decremented credits for user ${appleUserId}. New count (local view): ${currentUserData.usage_credits - 1}`);
-                    updatedCredits = currentUserData.usage_credits - 1;
-                }
-            } else {
-                 console.log(`Upload Route: User ${appleUserId} had 0 or fewer credits (${currentUserData.usage_credits}) before attempted decrement. No decrement performed.`);
-                 updatedCredits = currentUserData.usage_credits; // No decrement, use current value
-            }
-        } else {
-            console.log(`Upload Route: Processing was not successful for image ID ${imageId}. Credits not decremented for user ${appleUserId}.`);
-            // Fetch current credits if processing failed
-            const { data: finalUserData, error: finalUserError } = await supabase
-                .from('users')
-                .select('usage_credits')
-                .eq('apple_user_id', appleUserId)
-                .single();
-            if (finalUserError || !finalUserData) {
-                console.error(`Upload Route: Error fetching user ${appleUserId} for final credit count:`, finalUserError);
-                updatedCredits = userData.usage_credits; // Fallback to initial credits if fetch fails
-            } else {
-                updatedCredits = finalUserData.usage_credits;
-            }
+        if (!processingSuccessful) {
+            throw new Error('Image processing failed after initial upload and charge.'); // Will be caught and credit refunded
         }
-
-        // --- 6. Construct and Return Response to Client ---
-        const userInfo: UserInfo = {
-            appleUserId: appleUserId,
-            credits: updatedCredits
-        };
+        
+        // SUCCESS CASE: Credit was decremented, processing successful.
+        console.log(`${routeName}: Successfully processed image ${imageId} for user ${appleUserId}. Final credits: ${currentCreditsInResponse}`);
         return NextResponse.json({
-            message: 'Image upload accepted, processing attempted via stream.',
-            url: originalImageUrl,
-            userInfo: userInfo
-        });
+            message: 'Image upload accepted and processed successfully.',
+            url: originalImageUrl, // Or processedImageUrl if preferred by client for immediate display
+            userInfo: { appleUserId, credits: currentCreditsInResponse }
+        }, { status: 200 });
 
     } catch (err: unknown) {
-        console.error('Upload Route: Unhandled Error in POST handler:', err instanceof Error ? err.message : 'Unknown error');
-        // Attempt to mark as FAILED if we have an ID and DB connection
+        const error = err instanceof Error ? err : new Error('Unknown error during upload processing');
+        console.error(`${routeName}: Unhandled Error in POST handler:`, error.message);
+        let finalCreditsForResponse = initialCredits; // Default to initial if decrement never happened or failed
+
+        if (creditsDecremented) {
+            console.warn(`${routeName}: Error occurred after credits were decremented for ${appleUserId}. Attempting to refund credit.`);
+            const refundResult = await modifyCredits(supabase, appleUserId, 1);
+            if (refundResult.error || !refundResult.data) {
+                console.error(`${routeName}: CRITICAL - Failed to refund credit for user ${appleUserId} after error:`, refundResult.error);
+                // In this critical failure, the user was charged but an error occurred. Respond with credits *before* attempted refund.
+                // The `currentCreditsInResponse` would reflect the decremented state if decrement was successful.
+                // If decrement wasn't successful, `initialCredits` is more accurate.
+                // Let's assume if `creditsDecremented` is true, `decrementResult.data.credits` was set.
+                finalCreditsForResponse = (await getUserCredits(supabase, appleUserId)).data?.credits ?? initialCredits; // Re-fetch for most accuracy
+            } else {
+                console.log(`${routeName}: Successfully refunded credit for user ${appleUserId}. New balance: ${refundResult.data.credits}`);
+                finalCreditsForResponse = refundResult.data.credits;
+            }
+        } else {
+            // If credits were never decremented, try to get the most current count if initial check failed
+             const latestCredits = await getUserCredits(supabase, appleUserId);
+             finalCreditsForResponse = latestCredits.data?.credits ?? initialCredits; // Use fetched if available, else initial
+             if (latestCredits.error && appleUserId !== "unknown_user") { // Only warn if we expected to find a user
+                 console.warn(`${routeName}: Could not re-fetch credits for error response userInfo for user ${appleUserId}. Using initial: ${initialCredits}`);
+             }
+        }
+        
+        // Mark image as FAILED if an ID was generated
         if (imageId && supabase) {
              try {
                 await supabase.from('images').update({ status: 'FAILED', updated_at: new Date().toISOString() }).eq('id', imageId).maybeSingle();
-                console.log(`Upload Route: Marked image ID ${imageId} as FAILED due to unhandled error in handler.`);
-             } catch (dbUpdateError) { console.error(`Upload Route: CRITICAL - Failed to update status to FAILED for image ID ${imageId} in main catch block:`, dbUpdateError); }
+             } catch (dbUpdateError) { console.error(`${routeName}: CRITICAL - Failed to mark image as FAILED in main catch block:`, dbUpdateError); }
         }
-        return NextResponse.json({ error: 'Internal server error during upload processing.' }, { status: 500 });
+
+        // Determine appropriate status code for the error
+        let statusCode = 500;
+        if (error.message.includes('Insufficient credits')) statusCode = 402;
+        else if (error.message.includes('User not found')) statusCode = 404;
+        else if (error.message.includes('Invalid Content-Type') || error.message.includes('No image data')) statusCode = 400;
+        else if (error.message.includes('Unauthorized') || error.message.includes('Invalid session token')) statusCode = 401; // Catch auth errors that might slip to general catch
+
+        return NextResponse.json({ 
+            error: `Internal server error: ${error.message}`,
+            userInfo: { appleUserId, credits: finalCreditsForResponse } 
+        }, { status: statusCode });
     }
 }
 

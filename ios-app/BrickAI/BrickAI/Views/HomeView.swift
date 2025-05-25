@@ -176,7 +176,7 @@ struct HomeView: View {
                                     }
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(Color.gray.opacity(0.15)) // Light background
+                                    .background(Color(.white).opacity(0.5)) // Lighter gray with adjusted opacity
                                     .cornerRadius(20) // Capsule shape
                                 }
                                 .padding([.top, .leading], 16)
