@@ -76,30 +76,26 @@ struct CapturedImageView: View {
 
                  // Removed Status Message Area - View dismisses before showing status
 
-            } // End VStack for overlays
-            // .frame(maxWidth: .infinity, maxHeight: .infinity) // Ensure VStack expands to fill ZStack
-             // Removed animations tied to upload state variables
-
-        } // End ZStack (main container)
-         .onAppear {
-              // Ensure status messages were cleared (though they are removed now)
-              print("CapturedImageView: Appeared.")
-         }
-         // Alert for insufficient credits
-         .alert("Insufficient Credits", isPresented: $showInsufficientCreditsAlert) {
-             Button("Purchase Credits") {
-                 self.presentPaymentsView = true
-             }
-             Button("Cancel", role: .cancel) {}
-         } message: {
-             Text("You don't have enough credits to upload an image. Please purchase more to continue.")
-         }
-         // Sheet to present PaymentsView
-         .sheet(isPresented: $presentPaymentsView) {
-             // Ensure PaymentsView gets its necessary environment objects if any
-             // (it will inherit from CapturedImageView's environment)
-             PaymentsView()
-         }
+            }
+        }
+        .onAppear {
+            print("CapturedImageView: Appeared.")
+        }
+        // Alert for insufficient credits
+        .alert("Insufficient Credits", isPresented: $showInsufficientCreditsAlert) {
+            Button("Purchase Credits") {
+                self.presentPaymentsView = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You don't have enough credits to upload an image. Please purchase more to continue.")
+        }
+        // Sheet to present PaymentsView
+        .sheet(isPresented: $presentPaymentsView) {
+            // Ensure PaymentsView gets its necessary environment objects if any
+            // (it will inherit from CapturedImageView's environment)
+            PaymentsView()
+        }
     }
     
     // MARK: - Action Handlers

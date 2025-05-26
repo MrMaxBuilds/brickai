@@ -18,6 +18,17 @@ struct PaymentsView: View {
     // The specific product ID we are interested in for this view
     private let targetProductID = "com.NEXTAppDevelopment.brickai.5dollars" // <<< MUST MATCH StoreManager AND App Store Connect
 
+    // New struct for product display details
+    struct ProductDisplayDetails {
+        let tries: Int
+        let imageName: String
+    }
+
+    // Map product IDs to their display details
+    private let productDetailsMap: [String: ProductDisplayDetails] = [
+        "com.NEXTAppDevelopment.brickai.5dollars": ProductDisplayDetails(tries: 30, imageName: "brickai_5_dollars") // Updated image name
+    ]
+
     var body: some View {
         VStack(spacing: 20) {
             Text("Unlock More Creations")
@@ -82,14 +93,29 @@ struct PaymentsView: View {
     @ViewBuilder
     private func productPurchaseView(product: SKProduct) -> some View {
         VStack(spacing: 15) {
-            Image(systemName: "bolt.3.fill") // Icon representing "tries" or "power-ups"
-                .font(.system(size: 60))
-                .foregroundColor(.orange) // Accent color for the icon
-                .padding(.bottom, 10)
+            // Get display details from the map
+            if let details = productDetailsMap[product.productIdentifier] {
+                Image(details.imageName) // Load from asset catalog, not system symbols
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 200, height: 200) // Increased size
+                    .clipShape(RoundedRectangle(cornerRadius: 15)) // Added for rounded corners
+                    // .foregroundColor(.orange) // Commenting this out as the image likely has its own colors
+                    .padding(.bottom, 10)
 
-            Text(product.localizedTitle) // e.g., "30 Extra Tries"
-                .font(.title2)
-                .fontWeight(.semibold)
+                Text("\(details.tries) Credits") // Display tries from details
+                    .font(.title2)
+                    .fontWeight(.semibold)
+            } else {
+                // Fallback or default image/text if details not found
+                Image(systemName: "creditcard.fill") // Fallback icon
+                    .font(.system(size: 60))
+                    .foregroundColor(.gray)
+                    .padding(.bottom, 10)
+                Text("Purchase Option") // Fallback title
+                    .font(.title2)
+                    .fontWeight(.semibold)
+            }
 
             Text(product.localizedDescription) // Detailed description from App Store Connect
                 .font(.body)
@@ -142,16 +168,6 @@ struct PaymentsView: View {
                 self.alertTitle = "Purchase Successful"
                 self.alertMessage = "You've successfully purchased \(product.localizedTitle)."
                 self.showAlert = true
-            
-                // --- IMPORTANT: Grant Content ---
-                // The StoreManager's handlePurchased method is the primary place for this.
-                // If you need to update UI specifically in PaymentsView or trigger navigation,
-                // you can do it here. For example, you might want to update a local "tries" display
-                // if it were managed directly in this view, or pop the view.
-                //
-                // Example: If UserManager.shared.addTries(30) was called in StoreManager,
-                // the user's state is updated. You might want to reflect that here or navigate away.
-                // For now, we just show an alert and dismiss on OK.
 
             case .failure(let error):
                 // Purchase failed
