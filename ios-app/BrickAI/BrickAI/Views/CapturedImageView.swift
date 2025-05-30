@@ -14,6 +14,7 @@ import SwiftUI
 struct CapturedImageView: View {
     let image: UIImage // The captured image to display/upload
     let isSelfie: Bool // Added to know if the image was from front camera
+    let isFromCameraRoll: Bool // Added to know if the image was from camera roll
 
     @StateObject private var cameraManager = CameraManager.shared
     @EnvironmentObject var imageDataManager: ImageDataManager
@@ -31,15 +32,15 @@ struct CapturedImageView: View {
             // Display the captured image
             Image(uiImage: image)
                 .resizable()
-                .aspectRatio(contentMode: .fill)
-                .scaleEffect(x: isSelfie ? -1 : 1, y: 1) // Conditionally flip based on isSelfie
+                .aspectRatio(contentMode: isFromCameraRoll ? .fit : .fill)
+                .scaleEffect(x: (!isFromCameraRoll && isSelfie) ? -1 : 1, y: 1)
                 .ignoresSafeArea()
 
             // Overlays for controls
             VStack {
                  // Top row with Cancel ('X') button
                  HStack {
-                    Spacer().frame(width: 80) // Made this Spacer "mini" by giving it a fixed width
+                    Spacer()
                     Button(action: {
                         // Allow cancelling
                         cameraManager.resetCaptureState() // Dismiss this view by resetting state
@@ -51,6 +52,7 @@ struct CapturedImageView: View {
                             .shadow(radius: 3)
                     }
                     .padding() // Keep padding for the button itself
+                    Spacer().frame(width: 300)
                     Spacer() // This Spacer pushes the button to the left
                  }
 

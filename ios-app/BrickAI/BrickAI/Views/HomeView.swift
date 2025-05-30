@@ -27,6 +27,7 @@ struct HomeView: View {
     @State private var photoPickerItem: PhotosPickerItem?
     @State private var showPhotoPicker = false
     @State private var showPaymentsSheet = false // <<< ADDED: State for presenting PaymentsView as a sheet
+    @State private var isCurrentImageFromCameraRoll: Bool = false // ADDED: To track image source
 
 
     var body: some View {
@@ -39,7 +40,8 @@ struct HomeView: View {
                       if let capturedImage = cameraManager.capturedImage {
                           // --- Show Captured Image View ---
                            CapturedImageView(image: capturedImage,
-                                             isSelfie: cameraManager.isFrontCameraActive)
+                                             isSelfie: cameraManager.isFrontCameraActive,
+                                             isFromCameraRoll: isCurrentImageFromCameraRoll)
                                .environmentObject(imageDataManager) // Pass manager down
                                .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .identity))
                       } else {
@@ -216,6 +218,7 @@ struct HomeView: View {
                           if let data = try? await item.loadTransferable(type: Data.self),
                              let uiImage = UIImage(data: data) {
                               await MainActor.run {
+                                  self.isCurrentImageFromCameraRoll = true // ADDED: Set flag for camera roll image
                                   cameraManager.capturedImage = uiImage
                                   photoPickerItem = nil
                               }
@@ -242,6 +245,7 @@ struct HomeView: View {
                        cameraManager.stopSession()
                    } else {
                        print("HomeView: Captured image cleared.")
+                       self.isCurrentImageFromCameraRoll = false // ADDED: Reset flag when image is cleared
                        if cameraManager.isPermissionGranted {
                             print("HomeView: Starting session after image clear.")
                             cameraManager.startSession()

@@ -28,7 +28,6 @@ struct ImageListView: View {
                     // Pass down environment objects if needed by sub-components (like ImageRow)
                     ImageListContentView()
                         .environmentObject(imageDataManager)
-                        // .environmentObject(userManager) // Only if needed by ImageListContentView/ImageRow
                 }
             }
 
