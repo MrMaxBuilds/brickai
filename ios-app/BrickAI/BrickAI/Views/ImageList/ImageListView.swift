@@ -20,6 +20,7 @@ struct ImageListView: View {
                     ImageListContentView2()
                 }
             }
+            .background(Color.black.ignoresSafeArea())
             .onChange(of: imageDataManager.listError) { _, newError in
                 showErrorAlert = (newError != nil)
             }
@@ -52,7 +53,9 @@ struct ImageListContentView2: View {
                         } header: {
                             Text("Currently Uploading")
                                 .font(.headline)
-                                .foregroundColor(.secondary)
+// <-----CHANGE START------>
+                                .foregroundColor(Color(UIColor.systemGray)) // Adjusted for black background
+// <-----CHANGE END-------->
                                 .padding(.top)
                                 .padding(.horizontal)
                         }
@@ -76,17 +79,20 @@ struct ImageListContentView2: View {
                 imageDataManager.prepareImageData()
             }
         }
-        .navigationTitle("My Images")
+        .navigationTitle("Creations")
         .navigationBarTitleDisplayMode(.inline)
+// <-----CHANGE START------>
+        .preferredColorScheme(.dark) // Ensures nav bar items are light on a dark bar
+// <-----CHANGE END-------->
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack {
-                    Text("My Images").font(.headline)
+                    Text("Creations").font(.headline) // Color will be handled by preferredColorScheme
                     let totalCount = imageDataManager.images.count + imageDataManager.pendingUploads.count
                     if totalCount > 0 {
                         Text("(\(totalCount) total)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.secondary) // Secondary color on dark bar should be light gray
                     }
                 }
             }
@@ -103,7 +109,7 @@ struct AcknowledgedImageCardView: View {
     }
 }
 
-struct PendingImageCardView: View { // Unchanged
+struct PendingImageCardView: View {
     let pendingUpload: PendingUploadInfo
     var body: some View {
         VStack(alignment: .leading) {
@@ -111,16 +117,23 @@ struct PendingImageCardView: View { // Unchanged
                 Image(systemName: pendingUpload.placeholderImageName)
                     .resizable().aspectRatio(contentMode: .fit).frame(width: 30, height: 30)
                     .foregroundColor(.secondary).padding(15).frame(width: 60, height: 60)
-                    .background(Color(.systemGray5)).cornerRadius(8)
+// <-----CHANGE START------>
+                    .background(Color(UIColor.systemGray4)) // Differentiated icon background
+// <-----CHANGE END-------->
+                    .cornerRadius(8)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Status: Uploading...").font(.headline).foregroundColor(.orange)
-                    Text("Added: \(pendingUpload.createdAt, style: .relative) ago").font(.caption).foregroundColor(.gray)
+// <-----CHANGE START------>
+                    Text("Added: \(pendingUpload.createdAt, style: .relative) ago").font(.caption).foregroundColor(Color(UIColor.systemGray)) // Adjusted for card background
+// <-----CHANGE END-------->
                 }
                 Spacer()
                 ProgressView().scaleEffect(0.9)
             }
         }
-        .padding().background(Color(UIColor.secondarySystemGroupedBackground))
+// <-----CHANGE START------>
+        .padding().background(Color(UIColor.systemGray5)) // New card background
+// <-----CHANGE END-------->
         .cornerRadius(12).shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
         .opacity(0.8)
     }

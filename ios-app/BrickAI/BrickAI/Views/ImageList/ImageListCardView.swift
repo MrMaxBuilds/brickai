@@ -7,13 +7,11 @@
 
 import SwiftUI
 
-// <-----CHANGE START------>
 struct FullScreenInfo: Identifiable {
     let id = UUID()
     let imageDataForDetails: ImageData // To retain access to all data like status, prompt, etc.
     let urlToDisplay: URL             // The specific URL that was tapped
 }
-// <-----CHANGE END-------->
 
 struct ImageListCardView: View {
     let image: ImageData
@@ -27,9 +25,7 @@ struct ImageListCardView: View {
     @State private var showSaveAlert = false
     @State private var saveAlertTitle = ""
     @State private var saveAlertMessage = ""
-// <-----CHANGE START------>
     @State private var activeFullScreenInfo: FullScreenInfo?
-// <-----CHANGE END-------->
 
     private var controlsAreaHeight: CGFloat { cardHeight * 0.15 < 60 ? 60 : cardHeight * 0.15 }
     private var imageDisplayAreaHeight: CGFloat { cardHeight - controlsAreaHeight }
@@ -63,21 +59,17 @@ struct ImageListCardView: View {
                                     if let processedUrl = image.processedImageUrl {
                                         ImageItemView(url: processedUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
                                             .id(processedUrl)
-// <-----CHANGE START------>
                                             .onTapGesture {
                                                 self.activeFullScreenInfo = FullScreenInfo(imageDataForDetails: image, urlToDisplay: processedUrl)
                                             }
-// <-----CHANGE END-------->
                                     }
                                     // Then Original Image
                                     if let originalUrl = image.originalImageUrl {
                                         ImageItemView(url: originalUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
                                             .id(originalUrl)
-// <-----CHANGE START------>
                                             .onTapGesture {
                                                 self.activeFullScreenInfo = FullScreenInfo(imageDataForDetails: image, urlToDisplay: originalUrl)
                                             }
-// <-----CHANGE END-------->
                                     }
                                 }
                                 .scrollTargetLayout()
@@ -93,13 +85,11 @@ struct ImageListCardView: View {
                         }
                     } else {
                         ImageItemView(url: initialOrOnlyImageUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
-// <-----CHANGE START------>
                             .onTapGesture {
                                 if let url = initialOrOnlyImageUrl {
                                      self.activeFullScreenInfo = FullScreenInfo(imageDataForDetails: image, urlToDisplay: url)
                                 }
                             }
-// <-----CHANGE END-------->
                             .onAppear { visibleImageUrl = initialOrOnlyImageUrl }
                     }
                 }
@@ -129,7 +119,7 @@ struct ImageListCardView: View {
                             .font(.caption).fontWeight(.medium)
                             .foregroundColor(statusColor(status: image.status))
                         Text(image.createdAt.formatted(date: .abbreviated, time: .omitted))
-                            .font(.caption2).foregroundColor(.secondary)
+                            .font(.caption2).foregroundColor(.secondary) // Secondary color should contrast well on systemGray5
                     }
                     Spacer()
                     if isSaving {
@@ -151,19 +141,19 @@ struct ImageListCardView: View {
             .frame(maxWidth: .infinity)
         }
         .frame(height: cardHeight)
-        .background(Color(UIColor.secondarySystemGroupedBackground))
+// <-----CHANGE START------>
+        .background(Color(UIColor.systemGray5)) // New card background
+// <-----CHANGE END-------->
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.12), radius: 5, x: 0, y: 2)
         .clipped()
         .alert(isPresented: $showSaveAlert) {
             Alert(title: Text(saveAlertTitle), message: Text(saveAlertMessage), dismissButton: .default(Text("OK")))
         }
-// <-----CHANGE START------>
         .fullScreenCover(item: $activeFullScreenInfo) { infoItem in
             FullScreenImageView(imageDataForDetails: infoItem.imageDataForDetails, actualUrlToDisplay: infoItem.urlToDisplay)
                .environmentObject(imageDataManager)
         }
-// <-----CHANGE END-------->
     }
 
     private func initiateSaveProcess() {
