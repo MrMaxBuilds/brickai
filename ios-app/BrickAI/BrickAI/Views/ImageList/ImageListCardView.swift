@@ -7,6 +7,14 @@
 
 import SwiftUI
 
+// <-----CHANGE START------>
+struct FullScreenInfo: Identifiable {
+    let id = UUID()
+    let imageDataForDetails: ImageData // To retain access to all data like status, prompt, etc.
+    let urlToDisplay: URL             // The specific URL that was tapped
+}
+// <-----CHANGE END-------->
+
 struct ImageListCardView: View {
     let image: ImageData
     let cardHeight: CGFloat
@@ -19,7 +27,9 @@ struct ImageListCardView: View {
     @State private var showSaveAlert = false
     @State private var saveAlertTitle = ""
     @State private var saveAlertMessage = ""
-    @State private var tappedImageForFullScreen: ImageData?
+// <-----CHANGE START------>
+    @State private var activeFullScreenInfo: FullScreenInfo?
+// <-----CHANGE END-------->
 
     private var controlsAreaHeight: CGFloat { cardHeight * 0.15 < 60 ? 60 : cardHeight * 0.15 }
     private var imageDisplayAreaHeight: CGFloat { cardHeight - controlsAreaHeight }
@@ -49,20 +59,26 @@ struct ImageListCardView: View {
                         ScrollViewReader { proxy in
                             ScrollView(.horizontal) {
                                 LazyHStack(spacing: 0) {
-// <-----CHANGE START------>
                                     // Display Processed Image First
                                     if let processedUrl = image.processedImageUrl {
                                         ImageItemView(url: processedUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
                                             .id(processedUrl)
-                                            .onTapGesture { self.tappedImageForFullScreen = image }
+// <-----CHANGE START------>
+                                            .onTapGesture {
+                                                self.activeFullScreenInfo = FullScreenInfo(imageDataForDetails: image, urlToDisplay: processedUrl)
+                                            }
+// <-----CHANGE END-------->
                                     }
                                     // Then Original Image
                                     if let originalUrl = image.originalImageUrl {
                                         ImageItemView(url: originalUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
                                             .id(originalUrl)
-                                            .onTapGesture { self.tappedImageForFullScreen = image }
-                                    }
+// <-----CHANGE START------>
+                                            .onTapGesture {
+                                                self.activeFullScreenInfo = FullScreenInfo(imageDataForDetails: image, urlToDisplay: originalUrl)
+                                            }
 // <-----CHANGE END-------->
+                                    }
                                 }
                                 .scrollTargetLayout()
                             }
@@ -77,7 +93,13 @@ struct ImageListCardView: View {
                         }
                     } else {
                         ImageItemView(url: initialOrOnlyImageUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
-                            .onTapGesture { self.tappedImageForFullScreen = image }
+// <-----CHANGE START------>
+                            .onTapGesture {
+                                if let url = initialOrOnlyImageUrl {
+                                     self.activeFullScreenInfo = FullScreenInfo(imageDataForDetails: image, urlToDisplay: url)
+                                }
+                            }
+// <-----CHANGE END-------->
                             .onAppear { visibleImageUrl = initialOrOnlyImageUrl }
                     }
                 }
@@ -88,7 +110,6 @@ struct ImageListCardView: View {
             VStack(spacing: 4) {
                 if canShowBothImages {
                      HStack(spacing: 6) {
-// <-----CHANGE START------>
                           // Dot for Processed Image First
                           if let url = image.processedImageUrl {
                               Circle().fill(visibleImageUrl == url ? Color.primary.opacity(0.7) : Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
@@ -97,7 +118,6 @@ struct ImageListCardView: View {
                           if let url = image.originalImageUrl {
                               Circle().fill(visibleImageUrl == url ? Color.primary.opacity(0.7) : Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
                           }
-// <-----CHANGE END-------->
                      }
                      .frame(maxWidth: .infinity)
                      .padding(.top, 8)
@@ -138,10 +158,12 @@ struct ImageListCardView: View {
         .alert(isPresented: $showSaveAlert) {
             Alert(title: Text(saveAlertTitle), message: Text(saveAlertMessage), dismissButton: .default(Text("OK")))
         }
-        .fullScreenCover(item: $tappedImageForFullScreen) { imageDataItem in
-            FullScreenImageView(imageData: imageDataItem)
+// <-----CHANGE START------>
+        .fullScreenCover(item: $activeFullScreenInfo) { infoItem in
+            FullScreenImageView(imageDataForDetails: infoItem.imageDataForDetails, actualUrlToDisplay: infoItem.urlToDisplay)
                .environmentObject(imageDataManager)
         }
+// <-----CHANGE END-------->
     }
 
     private func initiateSaveProcess() {
@@ -181,14 +203,11 @@ struct ImageItemView: View {
     let targetHeight: CGFloat
 
     @EnvironmentObject var imageDataManager: ImageDataManager
-    //<-----CHANGE START------>
     @State private var locallyCachedUIImage: UIImage? = nil
     @State private var isLoadingCoreDataCache: Bool = true // Initially true to check Core Data
-    //<-----CHANGE END-------->
 
     var body: some View {
         Group {
-            //<-----CHANGE START------>
             if isLoadingCoreDataCache {
                 // Placeholder while checking our Core Data cache
                 ZStack {
@@ -231,11 +250,9 @@ struct ImageItemView: View {
                         .resizable().scaledToFit().foregroundColor(.secondary).padding()
                 }
             }
-            //<-----CHANGE END-------->
         }
         .frame(width: parentSize.width, height: targetHeight)
         .clipped()
-        //<-----CHANGE START------>
         .task { // Replaced .onAppear with .task for async work
             guard isLoadingCoreDataCache, let imageURL = url else {
                 // If not loading cache anymore, or URL is nil, no need to proceed
@@ -257,7 +274,6 @@ struct ImageItemView: View {
             }
             self.isLoadingCoreDataCache = false // Finished checking/triggering Core Data cache
         }
-        //<-----CHANGE END-------->
     }
 }
 

@@ -8,7 +8,10 @@ import SwiftUI
 
 struct FullScreenImageView: View {
     // Input: ImageData object
-    let imageData: ImageData
+// <-----CHANGE START------>
+    let imageDataForDetails: ImageData // Renamed from imageData
+    let actualUrlToDisplay: URL        // The specific URL to show
+// <-----CHANGE END-------->
 
     // Environment variable for dismissing
     @Environment(\.dismiss) var dismiss
@@ -26,9 +29,19 @@ struct FullScreenImageView: View {
     // State for Drag Gesture
     @State private var dragOffset: CGSize = .zero
 
+// <-----CHANGE START------>
+    // Initializer
+    init(imageDataForDetails: ImageData, actualUrlToDisplay: URL) {
+        self.imageDataForDetails = imageDataForDetails
+        self.actualUrlToDisplay = actualUrlToDisplay
+    }
+// <-----CHANGE END-------->
+
     var body: some View {
         // Determine the URL and check cache
-        let imageUrl = imageData.processedImageUrl ?? imageData.originalImageUrl
+// <-----CHANGE START------>
+        let imageUrl = actualUrlToDisplay // Use the specific URL passed in
+// <-----CHANGE END-------->
         let cachedImage = imageDataManager.getImage(for: imageUrl)
 
         ZStack {
@@ -50,8 +63,8 @@ struct FullScreenImageView: View {
                      Image(uiImage: loadedImage)
                          .resizable()
                          .scaledToFit()
-                 } else if let url = imageUrl {
-                     AsyncImage(url: url) { phase in
+                 } else { // Removed "if let url = imageUrl" because imageUrl (actualUrlToDisplay) is non-optional
+                     AsyncImage(url: imageUrl) { phase in // Use imageUrl directly
                          switch phase {
                          case .empty: ProgressView().tint(.white)
                          case .success(let loadedImage): loadedImage.resizable().scaledToFit()
@@ -59,12 +72,9 @@ struct FullScreenImageView: View {
                          @unknown default: EmptyView()
                          }
                      }
-                     .onAppear { imageDataManager.ensureImageIsCached(for: url) }
-                 } else {
-                     Image(systemName: "photo.fill")
-                         .foregroundColor(.secondary)
-                         .scaledToFit()
+                     .onAppear { imageDataManager.ensureImageIsCached(for: imageUrl) } // Use imageUrl directly
                  }
+                 // Removed "else" block for "photo.fill" as imageUrl is non-optional
             }
             .offset(y: dragOffset.height) // Apply vertical offset based on drag
             .gesture(dragGesture) // Attach drag gesture to image content
@@ -91,7 +101,7 @@ struct FullScreenImageView: View {
                          .padding()
                          .background(Color.black.opacity(0.5))
                          .clipShape(Circle())
-                         .disabled(imageUrl == nil)
+                         // .disabled(imageUrl == nil) // imageUrl (actualUrlToDisplay) is non-optional
                      }
                  }
             }
@@ -116,7 +126,7 @@ struct FullScreenImageView: View {
             }
             .onEnded { value in
                 let dragThreshold: CGFloat = 100
-                let velocityThreshold: CGFloat = 300
+                // let velocityThreshold: CGFloat = 300 // Not used in this logic
                 
                 if value.translation.height > dragThreshold || value.predictedEndTranslation.height > dragThreshold * 1.5 {
                     print("Drag ended: Dismissing view.")
@@ -137,17 +147,16 @@ struct FullScreenImageView: View {
 
     // --- Helper Functions for Saving (Unchanged) ---
     private func initiateSaveProcess() {
-        guard let url = imageData.processedImageUrl ?? imageData.originalImageUrl else {
-            presentSaveAlert(success: false, message: "Image URL not found.")
-            return
-        }
+// <-----CHANGE START------>
+        let urlToSave = self.actualUrlToDisplay // Use the specific URL that is being displayed
+// <-----CHANGE END-------->
         isSaving = true
-        if let cachedUIImage = imageDataManager.getImage(for: url) {
+        if let cachedUIImage = imageDataManager.getImage(for: urlToSave) {
              print("FullScreenImageView: Saving cached image.")
              photoLibraryManager.saveImage(cachedUIImage) { result in handleSaveCompletion(result: result) }
         } else {
              print("FullScreenImageView: Image not cached. Requesting download and save.")
-             photoLibraryManager.downloadAndSaveImage(url: url, imageDataManager: imageDataManager) { result in handleSaveCompletion(result: result) }
+             photoLibraryManager.downloadAndSaveImage(url: urlToSave, imageDataManager: imageDataManager) { result in handleSaveCompletion(result: result) }
         }
     }
 
@@ -175,7 +184,12 @@ struct FullScreenImageView_Previews: PreviewProvider {
         let sampleImageData = ImageData.previewData[0]
         let mockDataManager = ImageDataManager()
 
-        FullScreenImageView(imageData: sampleImageData)
+// <-----CHANGE START------>
+        // Ensure a valid URL from sampleImageData is used for actualUrlToDisplay
+        let displayUrl = sampleImageData.processedImageUrl ?? sampleImageData.originalImageUrl!
+
+        FullScreenImageView(imageDataForDetails: sampleImageData, actualUrlToDisplay: displayUrl)
             .environmentObject(mockDataManager)
+// <-----CHANGE END-------->
     }
 }
