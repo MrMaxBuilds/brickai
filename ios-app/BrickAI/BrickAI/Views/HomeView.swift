@@ -101,7 +101,7 @@ struct HomeView: View {
                                        Spacer() // Right align list button
 
                                        // --- Image List Button with Badge ---
-                                       NavigationLink(destination: ImageListView2()) {
+                                       NavigationLink(destination: ImageListView()) {
                                             ZStack(alignment: .topTrailing) { // Use ZStack for badge positioning
                                                 // Base Button Content
                                                 Image(systemName: "photo.stack")
