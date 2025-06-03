@@ -49,16 +49,20 @@ struct ImageListCardView: View {
                         ScrollViewReader { proxy in
                             ScrollView(.horizontal) {
                                 LazyHStack(spacing: 0) {
-                                    if let originalUrl = image.originalImageUrl {
-                                        ImageItemView(url: originalUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
-                                            .id(originalUrl)
-                                            .onTapGesture { self.tappedImageForFullScreen = image }
-                                    }
+// <-----CHANGE START------>
+                                    // Display Processed Image First
                                     if let processedUrl = image.processedImageUrl {
                                         ImageItemView(url: processedUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
                                             .id(processedUrl)
                                             .onTapGesture { self.tappedImageForFullScreen = image }
                                     }
+                                    // Then Original Image
+                                    if let originalUrl = image.originalImageUrl {
+                                        ImageItemView(url: originalUrl, parentSize: imageGeo.size, targetHeight: imageDisplayAreaHeight)
+                                            .id(originalUrl)
+                                            .onTapGesture { self.tappedImageForFullScreen = image }
+                                    }
+// <-----CHANGE END-------->
                                 }
                                 .scrollTargetLayout()
                             }
@@ -84,12 +88,16 @@ struct ImageListCardView: View {
             VStack(spacing: 4) {
                 if canShowBothImages {
                      HStack(spacing: 6) {
-                          if let url = image.originalImageUrl {
-                              Circle().fill(visibleImageUrl == url ? Color.primary.opacity(0.7) : Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
-                          }
+// <-----CHANGE START------>
+                          // Dot for Processed Image First
                           if let url = image.processedImageUrl {
                               Circle().fill(visibleImageUrl == url ? Color.primary.opacity(0.7) : Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
                           }
+                          // Then Dot for Original Image
+                          if let url = image.originalImageUrl {
+                              Circle().fill(visibleImageUrl == url ? Color.primary.opacity(0.7) : Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
+                          }
+// <-----CHANGE END-------->
                      }
                      .frame(maxWidth: .infinity)
                      .padding(.top, 8)
