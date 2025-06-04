@@ -1,13 +1,13 @@
 # Run combinecode in this dir
 
 # Backend
-web/src/app/api/*
-web/db/migrations/*
+# web/src/app/api/*
+# web/db/migrations/*
 
 
 
 # Client
-#ios-app/BrickAI/BrickAI/Views/*
-#ios-app/BrickAI/BrickAI/Managers/*
-#ios-app/BrickAI/BrickAI/Models/*
-#ios-app/BrickAI/BrickAI/BrickAIApp.swift
+ios-app/BrickAI/BrickAI/Views/*
+ios-app/BrickAI/BrickAI/Managers/*
+ios-app/BrickAI/BrickAI/Models/*
+ios-app/BrickAI/BrickAI/BrickAIApp.swift

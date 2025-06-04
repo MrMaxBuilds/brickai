@@ -43,7 +43,13 @@ class StoreManager: NSObject, ObservableObject {
     // MARK: - Private Properties
     // Set of product identifiers to fetch. This MUST match what's in App Store Connect.
     // For this task, we'll use a placeholder. Replace with your actual Product ID.
-    private let productIdentifiers: Set<String> = ["com.NEXTAppDevelopment.brickai.5dollars"] 
+// <-----CHANGE START------>
+    private let productIdentifiers: Set<String> = [
+        "com.NEXTAppDevelopment.brickai.1dollar",
+        "com.NEXTAppDevelopment.brickai.5dollars",
+        "com.NEXTAppDevelopment.brickai.20dollars"
+    ]
+// <-----CHANGE END-------->
     
     // Completion handler for the current purchase attempt
     private var onPurchaseCompleted: PurchaseCompletionHandler?
@@ -109,7 +115,10 @@ extension StoreManager: SKProductsRequestDelegate {
         // Update products on the main thread
         DispatchQueue.main.async {
             self.isLoadingProducts = false
-            self.products = response.products
+// <-----CHANGE START------>
+            // Sort products by price to ensure a consistent order if needed
+            self.products = response.products.sorted { $0.price.decimalValue < $1.price.decimalValue }
+// <-----CHANGE END-------->
             if response.products.isEmpty {
                 print("StoreManager: No products found for the given identifiers.")
             } else {

@@ -9,66 +9,94 @@ struct PaymentsView: View {
     // EnvironmentObject to access the shared StoreManager instance
     @EnvironmentObject var storeManager: StoreManager
     @Environment(\.dismiss) var dismiss
-    
+
     // State for managing alerts
     @State private var showAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
 
-    // The specific product ID we are interested in for this view
-    private let targetProductID = "com.NEXTAppDevelopment.brickai.5dollars" // <<< MUST MATCH StoreManager AND App Store Connect
-
     // New struct for product display details
     struct ProductDisplayDetails {
         let tries: Int
-        let imageName: String
+        let imageName: String // Still here, but not used in the view
+        let isPopular: Bool // To mark the "Most Popular" option
     }
 
     // Map product IDs to their display details
     private let productDetailsMap: [String: ProductDisplayDetails] = [
-        "com.NEXTAppDevelopment.brickai.5dollars": ProductDisplayDetails(tries: 30, imageName: "brickai_5_dollars") // Updated image name
+        "com.NEXTAppDevelopment.brickai.1dollar": ProductDisplayDetails(tries: 5, imageName: "brickai_1_dollar", isPopular: false),
+        "com.NEXTAppDevelopment.brickai.5dollars": ProductDisplayDetails(tries: 30, imageName: "brickai_5_dollars", isPopular: true),
+        "com.NEXTAppDevelopment.brickai.20dollars": ProductDisplayDetails(tries: 100, imageName: "brickai_20_dollars", isPopular: false)
     ]
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Unlock More Creations")
+            Text("Sale")
                 .font(.largeTitle)
                 .fontWeight(.bold)
                 .padding(.top, 30)
+                .foregroundColor(.black) // Title should be black
 
             if storeManager.isLoadingProducts {
                 ProgressView("Loading Products...")
                     .padding()
             } else {
-                // Find the specific product we want to display
-                if let product = storeManager.products.first(where: { $0.productIdentifier == targetProductID }) {
-                    productPurchaseView(product: product)
+                // Iterate over sorted products that are in our productDetailsMap
+                let displayableProducts = storeManager.products.filter { productDetailsMap.keys.contains($0.productIdentifier) }
+
+                if !displayableProducts.isEmpty {
+// <-----CHANGE START------>
+                    // Use a ScrollView to ensure content is scrollable if it exceeds screen height
+                    ScrollView {
+                        VStack(spacing: 15) { // Reduced spacing between cards
+                            ForEach(displayableProducts.sorted(by: { (p1, p2) -> Bool in
+                                // Custom sorting: popular first, then by price
+                                guard let details1 = productDetailsMap[p1.productIdentifier],
+                                      let details2 = productDetailsMap[p2.productIdentifier] else {
+                                    return false // Should not happen if products are filtered
+                                }
+                                if details1.isPopular && !details2.isPopular {
+                                    return true
+                                } else if !details1.isPopular && details2.isPopular {
+                                    return false
+                                }
+                                return p1.price.decimalValue < p2.price.decimalValue
+                            }), id: \.productIdentifier) { product in
+                                productPurchaseView(product: product)
+                            }
+                        }
+                        .padding(.horizontal) // Horizontal padding for the VStack of cards
+                        .padding(.top, 20) // Padding above the first card
+                        .padding(.bottom, 20) // Padding below the last card
+                    }
+// <-----CHANGE END-------->
                 } else {
-                    // Product not found or not loaded yet
+                    // No products found or not loaded yet
                     Text("No products available at the moment. Please try again later.")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray) // Adjusted for white background
                         .multilineTextAlignment(.center)
                         .padding()
                     Button("Refresh Products") {
                         storeManager.fetchProducts()
                     }
                     .padding()
+                    .tint(.blue) // Explicitly set tint if needed
                 }
             }
-            
+
             Spacer() // Pushes content to the top
 
             // Display transaction status (optional, for debugging or more detailed UI)
             if let state = storeManager.transactionState {
                 Text("Transaction Status: \(transactionStatusString(state))")
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundColor(.gray) // Adjusted for white background
                     .padding(.bottom)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("Purchase Tries")
+        .background(Color.white.ignoresSafeArea()) // White background for the whole view
+        .navigationTitle("Purchase Credits") // This title will be used if embedded in NavigationView
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             // Fetch products when the view appears if they haven't been loaded yet
@@ -92,70 +120,83 @@ struct PaymentsView: View {
     /// Creates a view for a single product, allowing purchase.
     @ViewBuilder
     private func productPurchaseView(product: SKProduct) -> some View {
-        VStack(spacing: 15) {
-            // Get display details from the map
-            if let details = productDetailsMap[product.productIdentifier] {
-                Image(details.imageName) // Load from asset catalog, not system symbols
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 200, height: 200) // Increased size
-                    .clipShape(RoundedRectangle(cornerRadius: 15)) // Added for rounded corners
-                    // .foregroundColor(.orange) // Commenting this out as the image likely has its own colors
-                    .padding(.bottom, 10)
+// <-----CHANGE START------>
+        // Ensure productDetails exist for the given product
+        if let details = productDetailsMap[product.productIdentifier] {
+            ZStack(alignment: .topLeading) { // Use ZStack for the "Most Popular" badge overlay
+                // Main card content
+                VStack(spacing: 0) { // Set spacing to 0, control with padding
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) { // Reduced spacing
+                            Text("\(details.tries)")
+                                .font(.system(size: 36, weight: .bold)) // Larger credit count
+                                .foregroundColor(.black)
+                            Text("Credits")
+                                .font(.footnote) // Smaller "Credits" text
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                        Text(product.localizedPrice ?? "Price")
+                            .font(.title2) // Slightly larger price
+                            .fontWeight(.semibold)
+                            .foregroundColor(.black)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20) // Padding for top content
+                    .padding(.bottom, 15) // Spacing below text content
 
-                Text("\(details.tries) Credits") // Display tries from details
-                    .font(.title2)
-                    .fontWeight(.semibold)
-            } else {
-                // Fallback or default image/text if details not found
-                Image(systemName: "creditcard.fill") // Fallback icon
-                    .font(.system(size: 60))
-                    .foregroundColor(.gray)
-                    .padding(.bottom, 10)
-                Text("Purchase Option") // Fallback title
-                    .font(.title2)
-                    .fontWeight(.semibold)
-            }
-
-            Text(product.localizedDescription) // Detailed description from App Store Connect
-                .font(.body)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-
-            // Button to purchase the product
-            Button(action: {
-                // Initiate purchase
-                storeManager.buyProduct(product) { result in
-                    handlePurchaseCompletion(result: result, product: product)
+                    Button(action: {
+                        // Initiate purchase
+                        storeManager.buyProduct(product) { result in
+                            handlePurchaseCompletion(result: result, product: product)
+                        }
+                    }) {
+                        // Dynamic button label based on purchase state
+                        if storeManager.transactionState == .purchasing &&
+                           storeManager.products.first(where: { $0.productIdentifier == product.productIdentifier }) != nil &&
+                           SKPaymentQueue.default().transactions.first(where: {$0.payment.productIdentifier == product.productIdentifier && $0.transactionState == .purchasing }) != nil {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44) // Fixed height for the button area
+                        } else {
+                            Text("Buy Now")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44) // Fixed height for the button
+                        }
+                    }
+                    .background(Color.blue)
+                    .cornerRadius(8) // Slightly less rounded corners for button
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20) // Padding for button at bottom
+                    .disabled(storeManager.transactionState == .purchasing)
                 }
-            }) {
-                // Dynamic button label based on purchase state
-                if storeManager.transactionState == .purchasing &&
-                   storeManager.products.first(where: { $0.productIdentifier == product.productIdentifier }) != nil { // Check if this is the product being purchased
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .frame(maxWidth: .infinity, minHeight: 30) // Maintain button height
-                } else {
-                    Text("Buy for \(product.localizedPrice ?? "Price")")
-                        .fontWeight(.semibold)
+                .background(Color(UIColor.systemGray6)) // Use a very light gray for card background
+                .cornerRadius(12) // Card corner radius
+                // .shadow(color: .gray.opacity(0.25), radius: 5, x: 0, y: 3) // Subtle shadow
+
+                // "Most Popular" Badge
+                if details.isPopular {
+                    Text("Most Popular")
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.orange) // Changed badge color
+                        .clipShape(Capsule())
+                        .offset(x: -8, y: -12) // Position badge at top-left, slightly offset
                 }
             }
-            .padding()
-            .background(Color.blue) // Standard purchase button color
-            .cornerRadius(10)
-            .shadow(radius: 3)
-            .disabled(storeManager.transactionState == .purchasing) // Disable while a purchase is in progress
-            .padding(.horizontal, 40)
-            .padding(.top, 10)
+            .padding(.bottom, 5) // Small space below each card before the next one
+        } else {
+            // Fallback if productDetails are somehow not found (should be rare)
+            Text("Product information for \(product.productIdentifier) is not available.")
+                .padding()
+                .foregroundColor(.red)
         }
-        .padding(.vertical, 20)
-        .background(Color.white) // Card-like background
-        .cornerRadius(15)
-        .shadow(color: .gray.opacity(0.4), radius: 5, x: 0, y: 2)
-        .padding(.horizontal) // Overall padding for the card
+// <-----CHANGE END-------->
     }
 
     /// Handles the completion of a purchase attempt.
@@ -176,15 +217,16 @@ struct PaymentsView: View {
                     // User cancelled, no alert needed or a subtle one
                     self.alertTitle = "Purchase Cancelled"
                     self.alertMessage = "Your purchase of \(product.localizedTitle) was cancelled."
+                    // Optionally show alert: self.showAlert = true
                 } else {
                     self.alertTitle = "Purchase Failed"
                     self.alertMessage = "Could not complete your purchase of \(product.localizedTitle). \(error.localizedDescription)"
+                    self.showAlert = true
                 }
-                self.showAlert = true
             }
         }
     }
-    
+
     /// Helper to convert transaction state to a readable string
     private func transactionStatusString(_ state: SKPaymentTransactionState) -> String {
         switch state {
