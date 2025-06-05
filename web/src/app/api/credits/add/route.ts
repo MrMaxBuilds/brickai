@@ -12,7 +12,9 @@ const requiredEnvVars = [
 
 // --- Hardcoded IAP Product ID to Credits Map ---
 const iapProductCreditsMap: Record<string, number> = {
+  'com.NEXTAppDevelopment.brickai.1dollar': 5,
   'com.NEXTAppDevelopment.brickai.5dollars': 30,
+  'com.NEXTAppDevelopment.brickai.20dollars': 150,
   // Add more product IDs and their corresponding credit amounts here
 };
 

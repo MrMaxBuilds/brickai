@@ -1,9 +1,49 @@
 // MARK: MODIFIED FILE - Views/PaymentsView.swift
 // File: BrickAI/Views/PaymentsView.swift
 // Updated to integrate with StoreManager for In-App Purchases.
+// Moved "Most Popular" indicator to be a blue bar overlaying the $1 item.
+// <-----CHANGE START------>
+// Refactored productPurchaseView to break up complex expressions.
+// <-----CHANGE END-------->
 
 import SwiftUI
 import StoreKit // Import StoreKit
+
+// Helper Shape for rounding specific corners
+struct CustomRoundedCorners: Shape {
+    var tl: CGFloat = 0.0
+    var tr: CGFloat = 0.0
+    var bl: CGFloat = 0.0
+    var br: CGFloat = 0.0
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+
+        let w = rect.size.width
+        let h = rect.size.height
+
+        // Make sure radius does not exceed half the shorter side
+        let Mtr = min(min(self.tr, h/2), w/2)
+        let Mtl = min(min(self.tl, h/2), w/2)
+        let Mbl = min(min(self.bl, h/2), w/2)
+        let Mbr = min(min(self.br, h/2), w/2)
+
+        path.move(to: CGPoint(x: w / 2.0, y: 0))
+        path.addLine(to: CGPoint(x: w - Mtr, y: 0))
+        path.addArc(center: CGPoint(x: w - Mtr, y: Mtr), radius: Mtr, startAngle: Angle(degrees: -90), endAngle: Angle(degrees: 0), clockwise: false)
+
+        path.addLine(to: CGPoint(x: w, y: h - Mbr))
+        path.addArc(center: CGPoint(x: w - Mbr, y: h - Mbr), radius: Mbr, startAngle: Angle(degrees: 0), endAngle: Angle(degrees: 90), clockwise: false)
+
+        path.addLine(to: CGPoint(x: Mbl, y: h))
+        path.addArc(center: CGPoint(x: Mbl, y: h - Mbl), radius: Mbl, startAngle: Angle(degrees: 90), endAngle: Angle(degrees: 180), clockwise: false)
+
+        path.addLine(to: CGPoint(x: 0, y: Mtl))
+        path.addArc(center: CGPoint(x: Mtl, y: Mtl), radius: Mtl, startAngle: Angle(degrees: 180), endAngle: Angle(degrees: 270), clockwise: false)
+        path.closeSubpath()
+        return path
+    }
+}
 
 struct PaymentsView: View {
     // EnvironmentObject to access the shared StoreManager instance
@@ -23,10 +63,11 @@ struct PaymentsView: View {
     }
 
     // Map product IDs to their display details
+    // Updated isPopular flags: $1 is now popular, $5 is not (for this specific indicator)
     private let productDetailsMap: [String: ProductDisplayDetails] = [
-        "com.NEXTAppDevelopment.brickai.1dollar": ProductDisplayDetails(tries: 5, imageName: "brickai_1_dollar", isPopular: false),
-        "com.NEXTAppDevelopment.brickai.5dollars": ProductDisplayDetails(tries: 30, imageName: "brickai_5_dollars", isPopular: true),
-        "com.NEXTAppDevelopment.brickai.20dollars": ProductDisplayDetails(tries: 100, imageName: "brickai_20_dollars", isPopular: false)
+        "com.NEXTAppDevelopment.brickai.1dollar": ProductDisplayDetails(tries: 5, imageName: "brickai_1_dollar", isPopular: true),
+        "com.NEXTAppDevelopment.brickai.5dollars": ProductDisplayDetails(tries: 30, imageName: "brickai_5_dollars", isPopular: false),
+        "com.NEXTAppDevelopment.brickai.20dollars": ProductDisplayDetails(tries: 150, imageName: "brickai_20_dollars", isPopular: false)
     ]
 
     var body: some View {
@@ -45,31 +86,23 @@ struct PaymentsView: View {
                 let displayableProducts = storeManager.products.filter { productDetailsMap.keys.contains($0.productIdentifier) }
 
                 if !displayableProducts.isEmpty {
-// <-----CHANGE START------>
                     // Use a ScrollView to ensure content is scrollable if it exceeds screen height
                     ScrollView {
                         VStack(spacing: 15) { // Reduced spacing between cards
-                            ForEach(displayableProducts.sorted(by: { (p1, p2) -> Bool in
-                                // Custom sorting: popular first, then by price
-                                guard let details1 = productDetailsMap[p1.productIdentifier],
-                                      let details2 = productDetailsMap[p2.productIdentifier] else {
-                                    return false // Should not happen if products are filtered
-                                }
-                                if details1.isPopular && !details2.isPopular {
-                                    return true
-                                } else if !details1.isPopular && details2.isPopular {
-                                    return false
-                                }
-                                return p1.price.decimalValue < p2.price.decimalValue
-                            }), id: \.productIdentifier) { product in
+                            // Products are now displayed sorted by price (least to most expensive)
+                            // as displayableProducts preserves the order from storeManager.products.
+                            ForEach(displayableProducts, id: \.productIdentifier) { product in
                                 productPurchaseView(product: product)
+                            }
+                            // Add a Spacer to push content to the top if it doesn't fill the ScrollView height
+                            if !displayableProducts.isEmpty {
+                                Spacer()
                             }
                         }
                         .padding(.horizontal) // Horizontal padding for the VStack of cards
                         .padding(.top, 20) // Padding above the first card
                         .padding(.bottom, 20) // Padding below the last card
                     }
-// <-----CHANGE END-------->
                 } else {
                     // No products found or not loaded yet
                     Text("No products available at the moment. Please try again later.")
@@ -117,76 +150,89 @@ struct PaymentsView: View {
         }
     }
 
+// <-----CHANGE START------>
+    /// Creates the main visual content of a product card.
+    @ViewBuilder
+    private func productCardMainContent(product: SKProduct, details: ProductDisplayDetails) -> some View {
+        VStack(spacing: 0) {
+            let barHeight: CGFloat = 30 // Approximate height of the popular bar
+            // If this item is popular, its content needs to start below the bar.
+            let contentTopPadding = details.isPopular ? barHeight + 10 : 20
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(details.tries)")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(.black)
+                    Text("Credits")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+                Text(product.localizedPrice ?? "Price")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.black)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, contentTopPadding) // Use calculated top padding
+            .padding(.bottom, 15)
+
+            Button(action: {
+                storeManager.buyProduct(product) { result in
+                    handlePurchaseCompletion(result: result, product: product)
+                }
+            }) {
+                // Dynamic button label based on purchase state
+                if storeManager.transactionState == .purchasing &&
+                   SKPaymentQueue.default().transactions.first(where: {$0.payment.productIdentifier == product.productIdentifier && $0.transactionState == .purchasing }) != nil {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                } else {
+                    Text("Buy Now")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
+            }
+            .background(Color.blue)
+            .cornerRadius(8)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+            .disabled(storeManager.transactionState == .purchasing)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color(UIColor.systemGray6))
+        .cornerRadius(12)
+    }
+
+    /// Creates the "Most Popular" bar view.
+    @ViewBuilder
+    private func popularProductBar() -> some View {
+        Text("Most Popular")
+            .font(.system(size: 16, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(Color.yellow.opacity(0.9))
+            .clipShape(CustomRoundedCorners(tl: 12, tr: 12, bl: 0, br: 0))
+    }
+
     /// Creates a view for a single product, allowing purchase.
     @ViewBuilder
     private func productPurchaseView(product: SKProduct) -> some View {
-// <-----CHANGE START------>
         // Ensure productDetails exist for the given product
         if let details = productDetailsMap[product.productIdentifier] {
-            ZStack(alignment: .topLeading) { // Use ZStack for the "Most Popular" badge overlay
-                // Main card content
-                VStack(spacing: 0) { // Set spacing to 0, control with padding
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) { // Reduced spacing
-                            Text("\(details.tries)")
-                                .font(.system(size: 36, weight: .bold)) // Larger credit count
-                                .foregroundColor(.black)
-                            Text("Credits")
-                                .font(.footnote) // Smaller "Credits" text
-                                .foregroundColor(.gray)
-                        }
-                        Spacer()
-                        Text(product.localizedPrice ?? "Price")
-                            .font(.title2) // Slightly larger price
-                            .fontWeight(.semibold)
-                            .foregroundColor(.black)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20) // Padding for top content
-                    .padding(.bottom, 15) // Spacing below text content
+            ZStack(alignment: .top) {
+                // Main card content (drawn first, so it's underneath the bar)
+                productCardMainContent(product: product, details: details)
 
-                    Button(action: {
-                        // Initiate purchase
-                        storeManager.buyProduct(product) { result in
-                            handlePurchaseCompletion(result: result, product: product)
-                        }
-                    }) {
-                        // Dynamic button label based on purchase state
-                        if storeManager.transactionState == .purchasing &&
-                           storeManager.products.first(where: { $0.productIdentifier == product.productIdentifier }) != nil &&
-                           SKPaymentQueue.default().transactions.first(where: {$0.payment.productIdentifier == product.productIdentifier && $0.transactionState == .purchasing }) != nil {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 44) // Fixed height for the button area
-                        } else {
-                            Text("Buy Now")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 44) // Fixed height for the button
-                        }
-                    }
-                    .background(Color.blue)
-                    .cornerRadius(8) // Slightly less rounded corners for button
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20) // Padding for button at bottom
-                    .disabled(storeManager.transactionState == .purchasing)
-                }
-                .background(Color(UIColor.systemGray6)) // Use a very light gray for card background
-                .cornerRadius(12) // Card corner radius
-                // .shadow(color: .gray.opacity(0.25), radius: 5, x: 0, y: 3) // Subtle shadow
-
-                // "Most Popular" Badge
-                if details.isPopular {
-                    Text("Most Popular")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.orange) // Changed badge color
-                        .clipShape(Capsule())
-                        .offset(x: -8, y: -12) // Position badge at top-left, slightly offset
+                // "Most Popular" Bar - Replaces the old badge
+                if details.isPopular { // This will be true for the $1 item
+                    popularProductBar()
                 }
             }
             .padding(.bottom, 5) // Small space below each card before the next one
@@ -196,8 +242,8 @@ struct PaymentsView: View {
                 .padding()
                 .foregroundColor(.red)
         }
-// <-----CHANGE END-------->
     }
+// <-----CHANGE END-------->
 
     /// Handles the completion of a purchase attempt.
     private func handlePurchaseCompletion(result: Result<SKPaymentTransaction, Error>, product: SKProduct) {
