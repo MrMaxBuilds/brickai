@@ -27,7 +27,13 @@ struct LoginView: View {
             } else {
                  // --- Login UI (No changes within this part) ---
                  Spacer()
-                 Text("Welcome to BrickAI").font(.largeTitle).padding(.bottom, 40)
+                 Image("brickai-logo")
+                     .resizable()
+                     .aspectRatio(contentMode: .fit)
+                    //  .frame(height: 60)
+                     .padding(20)
+                 Spacer()
+                 Spacer()
                  if let errorMsg = loginError { Text(errorMsg).foregroundColor(.red).padding(.horizontal).multilineTextAlignment(.center).transition(.opacity).padding(.bottom) }
                  if isAuthenticating { ProgressView("Authenticating...").padding().transition(.opacity)
                  } else {
