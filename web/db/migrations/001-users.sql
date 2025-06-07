@@ -4,7 +4,7 @@ CREATE TABLE users (
   apple_refresh_token TEXT NULL,      -- Store the refresh token securely
   email TEXT NULL,                    -- User's email (might be null or the private relay address)
   full_name TEXT NULL,                -- User's full name (if captured and needed)
-  usage_credits INTEGER NOT NULL DEFAULT 5, -- <--- ADDED: Tracks remaining usages, defaults to 5
+  usage_credits INTEGER NOT NULL DEFAULT 3, -- <--- ADDED: Tracks remaining usages, defaults to 5
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -4,7 +4,5 @@
 <dict>
 	<key>APIEndpointURL</key>
 	<string>https://brickai.vercel.app</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Save your favorite images</string>
 </dict>
 </plist>

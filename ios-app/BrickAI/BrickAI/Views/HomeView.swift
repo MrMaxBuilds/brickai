@@ -176,7 +176,7 @@ struct HomeView: View {
                                     HStack(spacing: 4) {
                                         Image(systemName: "bolt.fill")
                                             .foregroundColor(.blue)
-                                        Text("\(userManager.userCredits ?? -1)") // Display -1 if nil, for debugging or placeholder
+                                        Text("\(userManager.userCredits ?? 3)")
                                             .font(.callout)
                                             .fontWeight(.medium)
                                             .foregroundColor(.primary)
